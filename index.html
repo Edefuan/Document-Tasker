@@ -5,101 +5,36 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Document Tasker</title>
   <style>
-    :root {
-      font-family: Arial, sans-serif;
-      color: #20352c;
-      background: #f6f6f1;
-    }
     * { box-sizing: border-box; }
-    body { margin: 0; }
+    body { margin: 0; background: #f6f6f1; color: #20352c; font: 16px Arial, sans-serif; }
     main { max-width: 960px; margin: 36px auto; padding: 24px; }
-    h1 { font-size: 40px; margin: 0 0 8px; }
-    .intro { color: #68766e; line-height: 1.5; }
-    .panel {
-      background: white;
-      border: 1px solid #e0e5df;
-      border-radius: 12px;
-      padding: 24px;
-      margin-top: 20px;
-    }
-    label { display: block; font-weight: bold; margin: 18px 0 9px; }
+    h1 { margin: 0 0 8px; font-size: 40px; }
+    .intro, .help { color: #68766e; line-height: 1.5; }
+    .panel { margin-top: 20px; padding: 24px; border: 1px solid #e0e5df; border-radius: 12px; background: white; }
+    label { display: block; margin: 18px 0 9px; font-weight: bold; }
     input[type="file"], textarea { width: 100%; }
-    textarea {
-      min-height: 110px;
-      padding: 12px;
-      border: 1px solid #cfd8d0;
-      border-radius: 7px;
-      font: inherit;
-      line-height: 1.5;
-    }
-    button {
-      padding: 11px 16px;
-      border: 0;
-      border-radius: 7px;
-      background: #287452;
-      color: white;
-      font-weight: bold;
-      cursor: pointer;
-    }
+    textarea { min-height: 110px; padding: 12px; border: 1px solid #cfd8d0; border-radius: 7px; font: inherit; line-height: 1.5; }
+    button { padding: 11px 16px; border: 0; border-radius: 7px; background: #287452; color: white; font-weight: bold; cursor: pointer; }
     button:disabled { opacity: .45; cursor: not-allowed; }
-    .primary { margin-top: 14px; }
     #message { color: #68766e; white-space: pre-wrap; line-height: 1.5; }
-    #fileList { padding-left: 20px; color: #53635a; }
-    #fileList button {
-      margin: 4px 6px 4px 0;
-      padding: 7px 10px;
-      background: #edf3ee;
-      color: #315c45;
-      font-weight: normal;
-    }
+    #fileList button { margin: 4px 6px 4px 0; padding: 7px 10px; background: #edf3ee; color: #315c45; font-weight: normal; }
     #fileList button.active { background: #287452; color: white; }
-    .formula-builder {
-      margin-top: 16px;
-      padding: 14px;
-      border: 1px solid #e0e8e1;
-      border-radius: 8px;
-      background: #fafcf9;
-    }
-    .formula-title { font-weight: bold; margin-bottom: 6px; }
-    .help { color: #748078; font-size: 12px; line-height: 1.5; }
-    .formula-row {
-      display: grid;
-      grid-template-columns: minmax(130px, .8fr) minmax(220px, 1.5fr) 36px;
-      gap: 8px;
-      margin: 8px 0;
-    }
-    .formula-row input {
-      min-width: 0;
-      padding: 9px;
-      border: 1px solid #cfd8d0;
-      border-radius: 6px;
-      font: 13px Arial, sans-serif;
-    }
+    .primary { margin-top: 14px; }
+    .formula-builder { margin-top: 16px; padding: 14px; border: 1px solid #e0e8e1; border-radius: 8px; background: #fafcf9; }
+    .formula-row { display: grid; grid-template-columns: minmax(130px,.8fr) minmax(220px,1.5fr) 36px; gap: 8px; margin: 8px 0; }
+    .formula-row input { min-width: 0; padding: 9px; border: 1px solid #cfd8d0; border-radius: 6px; font: 13px Arial, sans-serif; }
     .remove { background: #eee; color: #704b45; }
-    .add { background: transparent; color: #287452; padding-left: 0; }
-    pre {
-      white-space: pre-wrap;
-      overflow: auto;
-      max-height: 420px;
-      padding: 16px;
-      border-radius: 7px;
-      background: #f5f7f4;
-      line-height: 1.5;
-    }
-    .error { color: #a33d35; }
-    @media (max-width: 600px) {
-      main { margin: 16px auto; padding: 16px; }
-      .formula-row { grid-template-columns: 1fr; }
-    }
+    .add { padding-left: 0; background: transparent; color: #287452; }
+    pre { max-height: 420px; overflow: auto; padding: 16px; border-radius: 7px; background: #f5f7f4; white-space: pre-wrap; line-height: 1.5; }
+    @media (max-width: 600px) { main { margin: 16px auto; padding: 16px; } .formula-row { grid-template-columns: 1fr; } }
   </style>
 </head>
 <body>
 <main>
   <h1>Document Tasker</h1>
   <p class="intro">
-    Choose files, describe the result you want, review it, and download it.
-    The file picker allows any file type. This version reads common document
-    formats and reports files it cannot read.
+    Upload files, describe the result you want, review it, and download it.
+    The file picker allows any file type. This version reads common document formats.
   </p>
 
   <section class="panel">
@@ -109,16 +44,18 @@
     <p id="message">Select one or more files to begin.</p>
 
     <label for="instruction">2. Describe the result you want</label>
-    <textarea id="instruction"
-      placeholder="Examples:&#10;Only bring out data for DOA.&#10;Reorder columns: Guest Name, Table No., Send QR Code To.&#10;Sort rows by Guest Name A to Z."></textarea>
+    <textarea id="instruction" placeholder="Examples:
+Only bring out data for DOA.
+Reorder columns: Guest Name, Table No., Send QR Code To.
+Sort rows by Guest Name A to Z."></textarea>
 
     <div id="formulaBuilder" class="formula-builder" hidden>
-      <div class="formula-title">Add formula columns to the Excel file</div>
-      <div class="help">
-        Enter a heading and an Excel formula for each new column.
+      <strong>Add formula columns to the Excel file</strong>
+      <p class="help">
+        Enter a heading and Excel formula for each new column.
         Use existing headings in square brackets, for example:
         <code>=[Guest Name]&amp;" - Table "&amp;[Table No.]</code>
-      </div>
+      </p>
       <div id="formulaRows"></div>
       <button id="addFormula" class="add" type="button">+ Add another column</button>
     </div>
@@ -146,47 +83,49 @@
   const resultBox = document.querySelector('#result');
   const downloadButton = document.querySelector('#download');
 
+  const spreadsheetTypes = new Set(['xlsx', 'xls', 'xlsm', 'xlsb', 'csv', 'tsv', 'ods']);
   let uploadedFiles = [];
   let activeIndex = -1;
   let resultBlob = null;
   let resultFilename = '';
+  let xlsxModule;
 
-  const spreadsheetExtensions = new Set([
-    'xlsx', 'xls', 'xlsm', 'xlsb', 'csv', 'tsv', 'ods'
-  ]);
-
-  function getExtension(name) {
+  function extension(name) {
     return name.includes('.') ? name.split('.').pop().toLowerCase() : '';
   }
 
-  function addFormulaRow(name = '', formula = '') {
+  async function getXlsx() {
+    if (!xlsxModule) {
+      const module = await import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm');
+      xlsxModule = module.default || module;
+    }
+    return xlsxModule;
+  }
+
+  function addFormulaRow() {
     const row = document.createElement('div');
     row.className = 'formula-row';
 
-    const nameInput = document.createElement('input');
-    nameInput.placeholder = 'New column heading';
-    nameInput.value = name;
-    nameInput.dataset.field = 'name';
+    const name = document.createElement('input');
+    name.placeholder = 'New column heading';
+    name.dataset.field = 'name';
 
-    const formulaInput = document.createElement('input');
-    formulaInput.placeholder = '=IF([Guest Name]="","",[Table No.])';
-    formulaInput.value = formula;
-    formulaInput.dataset.field = 'formula';
+    const formula = document.createElement('input');
+    formula.placeholder = '=IF([Guest Name]="","",[Table No.])';
+    formula.dataset.field = 'formula';
 
-    const removeButton = document.createElement('button');
-    removeButton.type = 'button';
-    removeButton.className = 'remove';
-    removeButton.textContent = '×';
-    removeButton.title = 'Remove this column';
-    removeButton.addEventListener('click', () => {
+    const remove = document.createElement('button');
+    remove.type = 'button';
+    remove.className = 'remove';
+    remove.textContent = '×';
+    remove.addEventListener('click', () => {
       row.remove();
-      updateApplyState();
+      updateButton();
     });
 
-    nameInput.addEventListener('input', updateApplyState);
-    formulaInput.addEventListener('input', updateApplyState);
-
-    row.append(nameInput, formulaInput, removeButton);
+    name.addEventListener('input', updateButton);
+    formula.addEventListener('input', updateButton);
+    row.append(name, formula, remove);
     formulaRows.append(row);
   }
 
@@ -197,71 +136,37 @@
     })).filter(column => column.name && column.formula);
   }
 
-  function updateApplyState() {
-    const selected = uploadedFiles[activeIndex];
-    const hasInstruction = instructionInput.value.trim().length > 0;
+  function updateButton() {
+    const file = uploadedFiles[activeIndex];
     const hasFormula = getFormulaColumns().length > 0;
-    applyButton.disabled = !selected || !!selected.error ||
-      (!hasInstruction && !(selected.kind === 'spreadsheet' && hasFormula));
-  }
-
-  function selectFile(index) {
-    activeIndex = index;
-    const file = uploadedFiles[index];
-
-    for (const button of fileList.querySelectorAll('button')) {
-      button.classList.toggle('active', Number(button.dataset.index) === index);
-    }
-
-    formulaBuilder.hidden = file.kind !== 'spreadsheet';
-    resultBlob = null;
-    downloadButton.disabled = true;
-    resultBox.textContent = 'No result yet.';
-    resultNote.textContent = 'Your result will appear here.';
-
-    message.textContent = file.error
-      ? `${file.name}: ${file.error}`
-      : `${file.name} is ready.`;
-
-    updateApplyState();
+    const hasInstruction = instructionInput.value.trim().length > 0;
+    applyButton.disabled = !file || !!file.error ||
+      (!hasInstruction && !(file.kind === 'spreadsheet' && hasFormula));
   }
 
   async function readFile(file) {
-    const ext = getExtension(file.name);
+    const ext = extension(file.name);
 
-    if (spreadsheetExtensions.has(ext)) {
-      const XLSX = await importXlsx();
+    if (spreadsheetTypes.has(ext)) {
+      const XLSX = await getXlsx();
       const bytes = new Uint8Array(await file.arrayBuffer());
       const workbook = XLSX.read(bytes, { type: 'array', cellFormula: true });
       const text = workbook.SheetNames.map(name =>
         `Sheet: ${name}\n${XLSX.utils.sheet_to_csv(workbook.Sheets[name])}`
       ).join('\n\n');
-
-      return {
-        name: file.name,
-        ext,
-        kind: 'spreadsheet',
-        bytes,
-        text
-      };
+      return { name: file.name, ext, kind: 'spreadsheet', bytes, text };
     }
 
-    if (['txt', 'md', 'json', 'xml', 'html', 'htm', 'csv', 'tsv', 'log'].includes(ext)) {
-      return {
-        name: file.name,
-        ext,
-        kind: 'text',
-        text: await file.text()
-      };
+    if (['txt', 'md', 'json', 'xml', 'html', 'htm', 'log'].includes(ext)) {
+      return { name: file.name, ext, kind: 'text', text: await file.text() };
     }
 
     if (ext === 'docx') {
-      const mod = await import('https://cdn.jsdelivr.net/npm/mammoth@1.9.0/+esm');
-      const mammoth = mod.default || mod;
+      const module = await import('https://cdn.jsdelivr.net/npm/mammoth@1.9.0/+esm');
+      const mammoth = module.default || module;
       const extracted = await mammoth.extractRawText({
         arrayBuffer: await file.arrayBuffer()
       });
-
       return { name: file.name, ext, kind: 'document', text: extracted.value };
     }
 
@@ -275,21 +180,17 @@
       }).promise;
 
       const pages = [];
-      for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
-        const page = await pdf.getPage(pageNumber);
+      for (let number = 1; number <= pdf.numPages; number++) {
+        const page = await pdf.getPage(number);
         const content = await page.getTextContent();
         pages.push(content.items.map(item => item.str).join(' '));
       }
 
       const text = pages.join('\n\n');
-      if (!text.trim()) {
-        throw new Error('No selectable text found in this PDF.');
-      }
-
+      if (!text.trim()) throw new Error('No selectable text found in this PDF.');
       return { name: file.name, ext, kind: 'document', text };
     }
 
-    // Try reading unknown formats as text; if that fails, report the file.
     const decoded = new TextDecoder('utf-8', { fatal: false })
       .decode(await file.arrayBuffer())
       .replace(/\0/g, ' ')
@@ -302,44 +203,43 @@
     throw new Error('This file was selected, but this version has no reader for its format.');
   }
 
-  let xlsxModule;
-  async function importXlsx() {
-    if (!xlsxModule) {
-      const mod = await import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm');
-      xlsxModule = mod.default || mod;
-    }
-    return xlsxModule;
+  function selectFile(index) {
+    activeIndex = index;
+    const file = uploadedFiles[index];
+
+    [...fileList.querySelectorAll('button')].forEach(button => {
+      button.classList.toggle('active', Number(button.dataset.index) === index);
+    });
+
+    formulaBuilder.hidden = file.kind !== 'spreadsheet';
+    resultBlob = null;
+    downloadButton.disabled = true;
+    resultBox.textContent = 'No result yet.';
+    resultNote.textContent = 'Your result will appear here.';
+    message.textContent = file.error ? `${file.name}: ${file.error}` : `${file.name} is ready.`;
+    updateButton();
   }
 
-  function extractPhrase(instruction) {
+  function findPhrase(instruction) {
     const match = instruction.match(
       /(?:containing|with|named|at|for)\s+["“]?([^"”.,;]+)["”]?/i
     );
     return match?.[1]?.trim() || '';
   }
 
-  function translateFormula(template, headers, rowNumber, XLSX) {
+  function makeFormula(template, headers, rowNumber, XLSX) {
     let formula = template.trim();
     if (!formula.startsWith('=')) formula = `=${formula}`;
 
-    formula = formula.replace(/\[([^\]]+)\]/g, (token, requestedHeader) => {
-      const columnIndex = headers.findIndex(
-        header => header.toLowerCase() === requestedHeader.trim().toLowerCase()
+    formula = formula.replace(/\[([^\]]+)\]/g, (token, heading) => {
+      const index = headers.findIndex(
+        value => value.toLowerCase() === heading.trim().toLowerCase()
       );
-
-      if (columnIndex < 0) {
-        throw new Error(`Formula column not found: ${requestedHeader}`);
-      }
-
-      return XLSX.utils.encode_cell({
-        r: rowNumber - 1,
-        c: columnIndex
-      });
+      if (index < 0) throw new Error(`Formula column not found: ${heading}`);
+      return XLSX.utils.encode_cell({ r: rowNumber - 1, c: index });
     });
 
-    // Copy relative references down to each following row.
-    formula = formula.replace(
-      /(\$?[A-Z]{1,3})(\$?)(\d+)/g,
+    formula = formula.replace(/(\$?[A-Z]{1,3})(\$?)(\d+)/g,
       (reference, column, absoluteRow) =>
         absoluteRow ? reference : `${column}${rowNumber}`
     );
@@ -348,80 +248,67 @@
   }
 
   async function processSpreadsheet(file, instruction) {
-    const XLSX = await importXlsx();
+    const XLSX = await getXlsx();
     const workbook = XLSX.read(file.bytes, { type: 'array', cellFormula: true });
-    const phrase = extractPhrase(instruction);
-    const shouldFilter =
+    const phrase = findPhrase(instruction);
+    const filterRows =
       /\b(only|filter|show|keep|bring out)\b/i.test(instruction) && phrase;
-    const reorderMatch = instruction.match(
-      /(?:reorder|arrange|put)\s+(?:the\s+)?columns?\s*(?::|in this order)?\s*(.+)/i
-    );
-    const sortMatch = instruction.match(
+    const reorder = instruction.match(/(?:reorder|arrange|put)\s+columns?\s*:?\s*(.+)/i);
+    const sort = instruction.match(
       /(?:sort|order)\s+rows?\s+by\s+["“]?([^,"”]+?)["”]?(?:\s+(ascending|descending|a to z|z to a))?(?:[.!?]|$)/i
     );
 
     const formulas = getFormulaColumns();
-    const formulaDescriptions = [];
-    let newColumnCount = 0;
+    const formulaNotes = [];
+    let added = 0;
 
     for (const sheetName of workbook.SheetNames) {
       const sheet = workbook.Sheets[sheetName];
       if (!sheet['!ref']) continue;
 
       const rows = XLSX.utils.sheet_to_json(sheet, {
-        header: 1,
-        defval: '',
-        raw: true,
-        blankrows: true
+        header: 1, defval: '', raw: true, blankrows: true
       });
-
-      const headerRowIndex = rows.findIndex(row =>
+      const headerIndex = rows.findIndex(row =>
         row.some(value => String(value).trim() !== '')
       );
-      if (headerRowIndex < 0) continue;
+      if (headerIndex < 0) continue;
 
-      let headers = rows[headerRowIndex].map(value => String(value ?? '').trim());
-      let dataRows = rows.slice(headerRowIndex + 1);
+      let headers = rows[headerIndex].map(value => String(value ?? '').trim());
+      let data = rows.slice(headerIndex + 1);
 
-      if (shouldFilter) {
+      if (filterRows) {
         const needle = phrase.toLowerCase();
-        dataRows = dataRows.filter(row =>
+        data = data.filter(row =>
           row.some(value => String(value).toLowerCase().includes(needle))
         );
       }
 
-      if (reorderMatch) {
-        const requested = reorderMatch[1]
-          .split(/,|\s+then\s+/i)
+      if (reorder) {
+        const requested = reorder[1].split(/,|\s+then\s+/i)
           .map(value => value.replace(/["'“”]/g, '').trim())
           .filter(Boolean);
-
-        const first = requested
-          .map(name => headers.find(header =>
-            header.toLowerCase() === name.toLowerCase()
-          ))
-          .filter(Boolean);
+        const first = requested.map(name =>
+          headers.find(header => header.toLowerCase() === name.toLowerCase())
+        ).filter(Boolean);
 
         if (first.length) {
-          const rest = headers.filter(header => !first.includes(header));
-          const newHeaders = [...first, ...rest];
-          const indexes = newHeaders.map(header => headers.indexOf(header));
-          dataRows = dataRows.map(row => indexes.map(index => row[index] ?? ''));
-          headers = newHeaders;
+          const ordered = [...first, ...headers.filter(header => !first.includes(header))];
+          const indexes = ordered.map(header => headers.indexOf(header));
+          data = data.map(row => indexes.map(index => row[index] ?? ''));
+          headers = ordered;
         }
       }
 
-      if (sortMatch) {
-        const sortColumn = headers.findIndex(
-          header => header.toLowerCase() === sortMatch[1].trim().toLowerCase()
+      if (sort) {
+        const column = headers.findIndex(
+          header => header.toLowerCase() === sort[1].trim().toLowerCase()
         );
-
-        if (sortColumn >= 0) {
-          const descending = /descending|z to a/i.test(sortMatch[2] || '');
-          dataRows.sort((a, b) => {
-            const order = String(a[sortColumn] ?? '').localeCompare(
-              String(b[sortColumn] ?? ''),
-              undefined,
+        if (column >= 0) {
+          const descending = /descending|z to a/i.test(sort[2] || '');
+          data.sort((a, b) => {
+            const order = String(a[column] ?? '').localeCompare(
+              String(b[column] ?? ''), undefined,
               { numeric: true, sensitivity: 'base' }
             );
             return descending ? -order : order;
@@ -431,38 +318,31 @@
 
       const sourceHeaders = [...headers];
 
-      if (formulas.length) {
-        const firstRowNumber = headerRowIndex + 2;
-        formulas.forEach(column => {
-          formulaDescriptions.push(
-            `${column.name}: ${translateFormula(column.formula, sourceHeaders, firstRowNumber, XLSX)}`
-          );
-        });
-      }
-
-      for (const column of formulas) {
-        if (headers.some(header => header.toLowerCase() === column.name.toLowerCase())) {
-          throw new Error(`The column “${column.name}” already exists on sheet “${sheetName}”.`);
+      formulas.forEach(item => {
+        formulaNotes.push(`${item.name}: ${
+          makeFormula(item.formula, sourceHeaders, headerIndex + 2, XLSX)
+        }`);
+        if (headers.some(header => header.toLowerCase() === item.name.toLowerCase())) {
+          throw new Error(`Column “${item.name}” already exists in “${sheetName}”.`);
         }
-        headers.push(column.name);
-        newColumnCount++;
-      }
+        headers.push(item.name);
+        added++;
+      });
 
-      const outputRows = [...rows.slice(0, headerRowIndex), headers];
+      const outputRows = [...rows.slice(0, headerIndex), headers];
 
-      dataRows.forEach((row, index) => {
-        const rowNumber = headerRowIndex + index + 2;
-        const outputRow = [...row];
+      data.forEach((row, rowIndex) => {
+        const excelRow = headerIndex + rowIndex + 2;
+        const output = [...row];
+        while (output.length < headers.length) output.push('');
 
-        while (outputRow.length < headers.length) outputRow.push('');
-
-        formulas.forEach((column, columnIndex) => {
-          outputRow[headers.length - formulas.length + columnIndex] = {
-            formula: translateFormula(column.formula, sourceHeaders, rowNumber, XLSX)
+        formulas.forEach((item, index) => {
+          output[headers.length - formulas.length + index] = {
+            formula: makeFormula(item.formula, sourceHeaders, excelRow, XLSX)
           };
         });
 
-        outputRows.push(outputRow);
+        outputRows.push(output);
       });
 
       const newSheet = XLSX.utils.aoa_to_sheet(
@@ -480,30 +360,23 @@
 
     workbook.Workbook ||= {};
     workbook.Workbook.CalcPr = {
-      calcMode: 'auto',
-      fullCalcOnLoad: true,
-      forceFullCalc: true
+      calcMode: 'auto', fullCalcOnLoad: true, forceFullCalc: true
     };
 
     const preview = workbook.SheetNames.map(name =>
       `Sheet: ${name}\n${XLSX.utils.sheet_to_csv(workbook.Sheets[name])}`
     ).join('\n\n');
 
-    const formulaText = formulaDescriptions.length
-      ? `Formula columns (Excel calculates these when opened):\n${formulaDescriptions.join('\n')}\n\n`
+    const formulaText = formulaNotes.length
+      ? `Formula columns (Excel calculates these when opened):\n${formulaNotes.join('\n')}\n\n`
       : '';
 
-    const bytes = XLSX.write(workbook, {
-      bookType: 'xlsx',
-      type: 'array',
-      cellFormula: true
-    });
-
+    const bytes = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
     const changes = [];
-    if (shouldFilter) changes.push(`kept rows containing “${phrase}”`);
-    if (reorderMatch) changes.push('reordered columns');
-    if (sortMatch) changes.push(`sorted rows by ${sortMatch[1].trim()}`);
-    if (newColumnCount) changes.push(`added ${newColumnCount} formula column(s)`);
+    if (filterRows) changes.push(`kept rows containing “${phrase}”`);
+    if (reorder) changes.push('reordered columns');
+    if (sort) changes.push(`sorted rows by ${sort[1].trim()}`);
+    if (added) changes.push(`added ${added} formula column(s)`);
     if (!changes.length) changes.push('prepared the spreadsheet');
 
     return {
@@ -516,11 +389,10 @@
     };
   }
 
-  function processText(file, instruction) {
-    const phrase = extractPhrase(instruction);
+  async function processText(file, instruction) {
+    const phrase = findPhrase(instruction);
     const shouldFilter =
       phrase && /\b(only|filter|show|keep|bring out)\b/i.test(instruction);
-
     const lines = file.text.split(/\r?\n/);
     const output = shouldFilter
       ? lines.filter(line => line.toLowerCase().includes(phrase.toLowerCase()))
@@ -539,9 +411,8 @@
     activeIndex = -1;
     fileList.innerHTML = '';
     formulaBuilder.hidden = true;
-    resultBlob = null;
-    downloadButton.disabled = true;
     applyButton.disabled = true;
+    downloadButton.disabled = true;
     resultBox.textContent = 'No result yet.';
 
     const files = [...filesInput.files];
@@ -558,7 +429,7 @@
       } catch (error) {
         return {
           name: file.name,
-          ext: getExtension(file.name),
+          ext: extension(file.name),
           kind: 'unsupported',
           error: error.message
         };
@@ -585,18 +456,18 @@
 
   document.querySelector('#addFormula').addEventListener('click', () => {
     addFormulaRow();
-    updateApplyState();
+    updateButton();
   });
 
-  instructionInput.addEventListener('input', updateApplyState);
+  instructionInput.addEventListener('input', updateButton);
 
   applyButton.addEventListener('click', async () => {
     const file = uploadedFiles[activeIndex];
     if (!file) return;
 
-    resultBlob = null;
-    downloadButton.disabled = true;
     applyButton.disabled = true;
+    downloadButton.disabled = true;
+    resultBlob = null;
     message.textContent = 'Applying your instruction…';
 
     try {
@@ -604,12 +475,12 @@
 
       if (file.kind === 'spreadsheet') {
         const output = await processSpreadsheet(file, instructionInput.value.trim());
-        resultBox.textContent = output.preview || 'The spreadsheet has no previewable content.';
+        resultBox.textContent = output.preview;
         resultNote.textContent = output.note;
         resultBlob = output.blob;
         resultFilename = output.filename;
       } else {
-        const output = processText(file, instructionInput.value.trim());
+        const output = await processText(file, instructionInput.value.trim());
         resultBox.textContent = output.text || 'No matching text found.';
         resultNote.textContent = output.note;
         resultBlob = new Blob([output.text], { type: 'text/plain;charset=utf-8' });
@@ -623,13 +494,12 @@
       resultNote.textContent = 'The requested result could not be created.';
       resultBox.textContent = 'Check the message above and adjust the instruction or formula.';
     } finally {
-      updateApplyState();
+      updateButton();
     }
   });
 
   downloadButton.addEventListener('click', () => {
     if (!resultBlob) return;
-
     const link = document.createElement('a');
     const url = URL.createObjectURL(resultBlob);
     link.href = url;
