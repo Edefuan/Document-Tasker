@@ -27,12 +27,11 @@
   <h1>Document Tasker</h1>
   <p class="intro">
     Choose one or more files, describe the result you want, then review and
-    download the matching content. The file picker accepts any file type.
+    download matching content. The file picker accepts any file type.
   </p>
 
   <section class="panel">
     <label for="filesInput">1. Choose any files</label>
-    <!-- No accept filter: files are not greyed out by extension. -->
     <input id="filesInput" type="file" multiple>
     <ul id="files"></ul>
     <p id="message">Select files to begin.</p>
@@ -51,23 +50,15 @@
   </section>
 </main>
 
-<script type="module">
-  import * as XLSX from 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm';
-  import mammoth from 'https://cdn.jsdelivr.net/npm/mammoth@1.9.0/+esm';
-  import * as pdfjs from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/+esm';
-  import JSZip from 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm';
-
-  pdfjs.GlobalWorkerOptions.workerSrc =
-    'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
-
+<script>
   const picker = document.querySelector('#filesInput');
   const fileList = document.querySelector('#files');
   const message = document.querySelector('#message');
-  const run = document.querySelector('#run');
+  const runButton = document.querySelector('#run');
   const result = document.querySelector('#result');
-  const download = document.querySelector('#download');
+  const downloadButton = document.querySelector('#download');
 
-  let loaded = [];
+  let loadedFiles = [];
   let resultText = '';
 
   function extensionOf(name) {
@@ -78,26 +69,24 @@
     const ext = extensionOf(file.name);
 
     if ([
-      'txt', 'csv', 'tsv', 'md', 'json', 'xml', 'html', 'htm',
-      'log', 'yaml', 'yml', 'ini', 'rtf'
+      'txt', 'csv', 'tsv', 'md', 'json', 'xml',
+      'html', 'htm', 'log', 'yaml', 'yml', 'ini'
     ].includes(ext)) {
-      let text = await file.text();
-
-      if (ext === 'rtf') {
-        text = text
-          .replace(/\\'[0-9a-f]{2}/gi, ' ')
-          .replace(/\\[a-z]+-?\\d* ?|[{}]/gi, ' ');
-      }
+      const text = await file.text();
 
       if (ext === 'html' || ext === 'htm') {
         const doc = new DOMParser().parseFromString(text, 'text/html');
-        text = doc.body.innerText || doc.body.textContent || '';
+        return doc.body.innerText || doc.body.textContent || '';
       }
 
       return text;
     }
 
     if (['xlsx', 'xls', 'xlsm', 'xlsb', 'ods'].includes(ext)) {
+      const mod = await import(
+        'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm'
+      );
+      const XLSX = mod.default || mod;
       const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
 
       return workbook.SheetNames.map(name =>
@@ -106,52 +95,88 @@
     }
 
     if (ext === 'docx') {
+      const mod = await import(
+        'https://cdn.jsdelivr.net/npm/mammoth@1.9.0/+esm'
+      );
+      const mammoth = mod.default || mod;
+
       const doc = await mammoth.extractRawText({
         arrayBuffer: await file.arrayBuffer()
       });
+
       return doc.value;
     }
 
     if (ext === 'pdf') {
+      const pdfjs = await import(
+        'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/+esm'
+      );
+
+      pdfjs.GlobalWorkerOptions.workerSrc =
+        'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
+
       const pdf = await pdfjs.getDocument({
         data: await file.arrayBuffer()
       }).promise;
 
       const pages = [];
+
       for (let n = 1; n <= pdf.numPages; n++) {
         const page = await pdf.getPage(n);
         const content = await page.getTextContent();
-        pages.push(`Page ${n}\n${content.items.map(item => item.str).join(' ')}`);
+
+        pages.push(
+          `Page ${n}\n${content.items.map(item => item.str).join(' ')}`
+        );
       }
-      return pages.join('\n\n');
+
+      const text = pages.join('\n\n');
+
+      if (!text.trim()) {
+        throw new Error('No selectable text found. Scanned PDFs need OCR.');
+      }
+
+      return text;
     }
 
-    if (ext === 'pptx' || ext === 'odt') {
+    if (['pptx', 'odt'].includes(ext)) {
+      const mod = await import(
+        'https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm'
+      );
+      const JSZip = mod.default || mod;
       const zip = await JSZip.loadAsync(await file.arrayBuffer());
+
       const names = Object.keys(zip.files)
-        .filter(name => ext === 'pptx'
-          ? /^ppt\/slides\/slide\d+\.xml$/.test(name)
-          : name === 'content.xml')
+        .filter(name =>
+          ext === 'pptx'
+            ? /^ppt\/slides\/slide\d+\.xml$/.test(name)
+            : name === 'content.xml'
+        )
         .sort();
 
-      const chunks = [];
+      const parts = [];
+
       for (const name of names) {
         const xml = await zip.files[name].async('text');
         const doc = new DOMParser().parseFromString(xml, 'application/xml');
+
         const text = [...doc.getElementsByTagName('*')]
-          .filter(element => element.localName === 't' && element.textContent)
+          .filter(element =>
+            element.localName === 't' && element.textContent
+          )
           .map(element => element.textContent)
           .join(' ');
-        chunks.push(text);
+
+        parts.push(text);
       }
-      return chunks.join('\n');
+
+      return parts.join('\n');
     }
 
-    // Try text decoding for other file types. Some binary formats cannot
-    // be read this way; those files are reported in the results.
-    const bytes = await file.arrayBuffer();
+    // Try text decoding for other formats. If a binary file cannot be read,
+    // it is still listed and reported in the result.
     const decoded = new TextDecoder('utf-8', { fatal: false })
-      .decode(bytes)
+      .decode(await file.arrayBuffer())
       .replace(/\0/g, ' ')
       .trim();
 
@@ -160,15 +185,15 @@
     }
 
     throw new Error(
-      'This file was selected, but this starter cannot extract its contents.'
+      'Selected, but no reader for this file format is available in this starter.'
     );
   }
 
   picker.addEventListener('change', async () => {
-    loaded = [];
+    loadedFiles = [];
     resultText = '';
     result.textContent = 'Your result will appear here.';
-    download.disabled = true;
+    downloadButton.disabled = true;
 
     const files = [...picker.files];
     fileList.innerHTML = '';
@@ -182,37 +207,45 @@
 
     if (!files.length) {
       message.textContent = 'Select files to begin.';
-      run.disabled = true;
+      runButton.disabled = true;
       return;
     }
 
-    run.disabled = true;
-    message.textContent = `Reading ${files.length} file(s)…`;
+    message.textContent = `Selected ${files.length} file(s). Reading contents…`;
+    runButton.disabled = true;
 
-    loaded = await Promise.all(files.map(async file => {
+    loadedFiles = await Promise.all(files.map(async file => {
       try {
-        return { name: file.name, text: await extract(file), error: '' };
+        return {
+          name: file.name,
+          text: await extract(file),
+          error: ''
+        };
       } catch (error) {
-        return { name: file.name, text: '', error: error.message };
+        return {
+          name: file.name,
+          text: '',
+          error: error.message || 'Could not read this file.'
+        };
       }
     }));
 
-    const errors = loaded.filter(file => file.error);
+    const unreadable = loadedFiles.filter(file => file.error);
 
-    if (errors.length) {
-      message.textContent =
-        `${loaded.length} file(s) selected. ${errors.length} could not be read. ` +
-        'They will be listed in the result so none are silently skipped.\n' +
-        errors.map(file => `${file.name}: ${file.error}`).join('\n');
-    } else {
-      message.textContent = `All ${loaded.length} file(s) are ready.`;
-    }
+    message.textContent = unreadable.length
+      ? `${files.length} file(s) selected. ` +
+        `${files.length - unreadable.length} readable; ` +
+        `${unreadable.length} need a compatible reader. ` +
+        'You can still apply the instruction; every file will be listed in the result.'
+      : `All ${files.length} file(s) are ready.`;
 
-    run.disabled = false;
+    // Enable the action after selection, even if a format needs a reader.
+    runButton.disabled = false;
   });
 
-  run.addEventListener('click', () => {
-    const instruction = document.querySelector('#instruction').value.trim();
+  runButton.addEventListener('click', () => {
+    const instruction =
+      document.querySelector('#instruction').value.trim();
 
     if (!instruction) {
       message.textContent = 'Enter the outcome you want first.';
@@ -222,6 +255,7 @@
     const match = instruction.match(
       /(?:containing|with|named|at|for)\s+["“]?(.+?)["”]?\s*$/i
     );
+
     const phrase = (match ? match[1] : instruction)
       .replace(/[.!?]+$/, '')
       .trim()
@@ -229,7 +263,7 @@
 
     const output = [];
 
-    for (const file of loaded) {
+    for (const file of loadedFiles) {
       if (file.error) {
         output.push(`[${file.name}] NOT PROCESSED: ${file.error}`);
         continue;
@@ -239,22 +273,22 @@
         .split(/\r?\n/)
         .filter(line => line.toLowerCase().includes(phrase));
 
-      if (matches.length) {
-        output.push(`[${file.name}]\n${matches.join('\n')}`);
-      } else {
-        output.push(`[${file.name}] No lines matched “${phrase}”.`);
-      }
+      output.push(
+        matches.length
+          ? `[${file.name}]\n${matches.join('\n')}`
+          : `[${file.name}] No lines matched “${phrase}”.`
+      );
     }
 
     resultText = output.join('\n\n');
     result.textContent = resultText || 'No files selected.';
-    download.disabled = !resultText;
+    downloadButton.disabled = !resultText;
     message.textContent =
-      `Instruction applied across ${loaded.length} selected file(s). ` +
-      'Review the per-file results and any files marked NOT PROCESSED.';
+      `Instruction applied across ${loadedFiles.length} selected file(s). ` +
+      'Review each file’s result and any NOT PROCESSED notices.';
   });
 
-  download.addEventListener('click', () => {
+  downloadButton.addEventListener('click', () => {
     const link = document.createElement('a');
     const url = URL.createObjectURL(
       new Blob([resultText], { type: 'text/plain;charset=utf-8' })
