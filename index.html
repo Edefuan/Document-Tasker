@@ -2,178 +2,269 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Document Tasker</title>
   <style>
-    :root {
-      font-family: Arial, sans-serif;
-      color: #20352c;
-      background: #f6f6f1;
-    }
-
-    * { box-sizing: border-box; }
-
-    body { margin: 0; }
-
-    main {
-      max-width: 900px;
-      margin: 48px auto;
-      padding: 24px;
-    }
-
-    h1 { margin-bottom: 8px; font-size: 42px; }
-
-    .intro { color: #68766e; line-height: 1.5; }
-
-    .panel {
-      margin-top: 24px;
-      padding: 24px;
-      border: 1px solid #e0e5df;
-      border-radius: 12px;
-      background: white;
-    }
-
-    label {
-      display: block;
-      margin: 18px 0 9px;
-      font-weight: bold;
-    }
-
-    input[type="file"], textarea { width: 100%; }
-
-    textarea {
-      min-height: 110px;
-      padding: 12px;
-      border: 1px solid #cfd8d0;
-      border-radius: 7px;
-      font: inherit;
-      line-height: 1.5;
-    }
-
-    button {
-      margin-top: 14px;
-      padding: 12px 18px;
-      border: 0;
-      border-radius: 7px;
-      color: white;
-      background: #287452;
-      font-weight: bold;
-      cursor: pointer;
-    }
-
-    button:disabled { opacity: .5; cursor: not-allowed; }
-
-    #message { color: #68766e; }
-
-    pre {
-      overflow: auto;
-      white-space: pre-wrap;
-      padding: 16px;
-      border-radius: 7px;
-      background: #f5f7f4;
-      line-height: 1.5;
-    }
+    :root{font:16px Arial,sans-serif;color:#20352c;background:#f6f6f1}
+    *{box-sizing:border-box}
+    body{margin:0}
+    main{max-width:900px;margin:42px auto;padding:24px}
+    h1{font-size:40px;margin:0 0 8px}
+    .intro{color:#68766e;line-height:1.5}
+    .panel{background:white;border:1px solid #e0e5df;border-radius:12px;padding:24px;margin-top:20px}
+    label{display:block;font-weight:bold;margin:18px 0 9px}
+    input[type=file],textarea{width:100%}
+    textarea{min-height:110px;padding:12px;border:1px solid #cfd8d0;border-radius:7px;font:inherit;line-height:1.5}
+    button{margin-top:14px;padding:12px 18px;border:0;border-radius:7px;background:#287452;color:white;font-weight:bold;cursor:pointer}
+    button:disabled{opacity:.5;cursor:not-allowed}
+    #message{color:#68766e;white-space:pre-wrap}
+    #files{padding-left:20px;color:#53635a}
+    pre{white-space:pre-wrap;overflow:auto;max-height:420px;padding:16px;border-radius:7px;background:#f5f7f4;line-height:1.5}
   </style>
 </head>
 <body>
-  <main>
-    <h1>Document Tasker</h1>
-    <p class="intro">
-      Upload a document, describe what you want to find, and review the matching text.
-      Files are read in your browser.
-    </p>
+<main>
+  <h1>Document Tasker</h1>
+  <p class="intro">
+    Choose one or more files, describe the result you want, then review and
+    download the matching content. The file picker accepts any file type.
+  </p>
 
-    <section class="panel">
-      <label for="file">1. Choose a file</label>
-      <input id="file" type="file" accept=".txt,.csv,.md">
-      <p id="message">This starter version supports text, CSV, and Markdown files.</p>
+  <section class="panel">
+    <label for="filesInput">1. Choose any files</label>
+    <!-- No accept filter: files are not greyed out by extension. -->
+    <input id="filesInput" type="file" multiple>
+    <ul id="files"></ul>
+    <p id="message">Select files to begin.</p>
 
-      <label for="instruction">2. Describe what you want</label>
-      <textarea id="instruction"
-        placeholder="For example: Show me only the lines containing Table 4"></textarea>
+    <label for="instruction">2. Describe what you want from the uploaded files</label>
+    <textarea id="instruction"
+      placeholder="For example: Show me every guest assigned to Table 4, across all uploaded files."></textarea>
 
-      <button id="run" disabled>Find matching lines</button>
-    </section>
+    <button id="run" disabled>Apply instruction to uploaded files</button>
+  </section>
 
-    <section class="panel">
-      <label>Result</label>
-      <pre id="result">Your result will appear here.</pre>
-      <button id="download" disabled>Download result</button>
-    </section>
-  </main>
+  <section class="panel">
+    <label>Result</label>
+    <pre id="result">Your result will appear here.</pre>
+    <button id="download" disabled>Download result</button>
+  </section>
+</main>
 
-  <script>
-    const fileInput = document.querySelector("#file");
-    const instructionInput = document.querySelector("#instruction");
-    const runButton = document.querySelector("#run");
-    const downloadButton = document.querySelector("#download");
-    const message = document.querySelector("#message");
-    const resultBox = document.querySelector("#result");
+<script type="module">
+  import * as XLSX from 'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm';
+  import mammoth from 'https://cdn.jsdelivr.net/npm/mammoth@1.9.0/+esm';
+  import * as pdfjs from 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/+esm';
+  import JSZip from 'https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm';
 
-    let fileText = "";
-    let resultText = "";
+  pdfjs.GlobalWorkerOptions.workerSrc =
+    'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
 
-    fileInput.addEventListener("change", async () => {
-      const file = fileInput.files[0];
-      fileText = "";
-      resultText = "";
-      runButton.disabled = true;
-      downloadButton.disabled = true;
-      resultBox.textContent = "Your result will appear here.";
+  const picker = document.querySelector('#filesInput');
+  const fileList = document.querySelector('#files');
+  const message = document.querySelector('#message');
+  const run = document.querySelector('#run');
+  const result = document.querySelector('#result');
+  const download = document.querySelector('#download');
 
-      if (!file) return;
+  let loaded = [];
+  let resultText = '';
 
+  function extensionOf(name) {
+    return name.includes('.') ? name.split('.').pop().toLowerCase() : '';
+  }
+
+  async function extract(file) {
+    const ext = extensionOf(file.name);
+
+    if ([
+      'txt', 'csv', 'tsv', 'md', 'json', 'xml', 'html', 'htm',
+      'log', 'yaml', 'yml', 'ini', 'rtf'
+    ].includes(ext)) {
+      let text = await file.text();
+
+      if (ext === 'rtf') {
+        text = text
+          .replace(/\\'[0-9a-f]{2}/gi, ' ')
+          .replace(/\\[a-z]+-?\\d* ?|[{}]/gi, ' ');
+      }
+
+      if (ext === 'html' || ext === 'htm') {
+        const doc = new DOMParser().parseFromString(text, 'text/html');
+        text = doc.body.innerText || doc.body.textContent || '';
+      }
+
+      return text;
+    }
+
+    if (['xlsx', 'xls', 'xlsm', 'xlsb', 'ods'].includes(ext)) {
+      const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+
+      return workbook.SheetNames.map(name =>
+        `Sheet: ${name}\n${XLSX.utils.sheet_to_csv(workbook.Sheets[name])}`
+      ).join('\n\n');
+    }
+
+    if (ext === 'docx') {
+      const doc = await mammoth.extractRawText({
+        arrayBuffer: await file.arrayBuffer()
+      });
+      return doc.value;
+    }
+
+    if (ext === 'pdf') {
+      const pdf = await pdfjs.getDocument({
+        data: await file.arrayBuffer()
+      }).promise;
+
+      const pages = [];
+      for (let n = 1; n <= pdf.numPages; n++) {
+        const page = await pdf.getPage(n);
+        const content = await page.getTextContent();
+        pages.push(`Page ${n}\n${content.items.map(item => item.str).join(' ')}`);
+      }
+      return pages.join('\n\n');
+    }
+
+    if (ext === 'pptx' || ext === 'odt') {
+      const zip = await JSZip.loadAsync(await file.arrayBuffer());
+      const names = Object.keys(zip.files)
+        .filter(name => ext === 'pptx'
+          ? /^ppt\/slides\/slide\d+\.xml$/.test(name)
+          : name === 'content.xml')
+        .sort();
+
+      const chunks = [];
+      for (const name of names) {
+        const xml = await zip.files[name].async('text');
+        const doc = new DOMParser().parseFromString(xml, 'application/xml');
+        const text = [...doc.getElementsByTagName('*')]
+          .filter(element => element.localName === 't' && element.textContent)
+          .map(element => element.textContent)
+          .join(' ');
+        chunks.push(text);
+      }
+      return chunks.join('\n');
+    }
+
+    // Try text decoding for other file types. Some binary formats cannot
+    // be read this way; those files are reported in the results.
+    const bytes = await file.arrayBuffer();
+    const decoded = new TextDecoder('utf-8', { fatal: false })
+      .decode(bytes)
+      .replace(/\0/g, ' ')
+      .trim();
+
+    if (decoded && /[\p{L}\p{N}]{3}/u.test(decoded)) {
+      return decoded;
+    }
+
+    throw new Error(
+      'This file was selected, but this starter cannot extract its contents.'
+    );
+  }
+
+  picker.addEventListener('change', async () => {
+    loaded = [];
+    resultText = '';
+    result.textContent = 'Your result will appear here.';
+    download.disabled = true;
+
+    const files = [...picker.files];
+    fileList.innerHTML = '';
+
+    for (const file of files) {
+      const item = document.createElement('li');
+      item.textContent =
+        `${file.name} (${file.type || 'file'}, ${Math.ceil(file.size / 1024)} KB)`;
+      fileList.append(item);
+    }
+
+    if (!files.length) {
+      message.textContent = 'Select files to begin.';
+      run.disabled = true;
+      return;
+    }
+
+    run.disabled = true;
+    message.textContent = `Reading ${files.length} file(s)…`;
+
+    loaded = await Promise.all(files.map(async file => {
       try {
-        fileText = await file.text();
-        message.textContent = `Loaded ${file.name}.`;
-        runButton.disabled = false;
-      } catch {
-        message.textContent = "Could not read that file.";
+        return { name: file.name, text: await extract(file), error: '' };
+      } catch (error) {
+        return { name: file.name, text: '', error: error.message };
       }
-    });
+    }));
 
-    runButton.addEventListener("click", () => {
-      const instruction = instructionInput.value.trim();
+    const errors = loaded.filter(file => file.error);
 
-      if (!instruction) {
-        message.textContent = "Please describe what you want to find.";
-        return;
+    if (errors.length) {
+      message.textContent =
+        `${loaded.length} file(s) selected. ${errors.length} could not be read. ` +
+        'They will be listed in the result so none are silently skipped.\n' +
+        errors.map(file => `${file.name}: ${file.error}`).join('\n');
+    } else {
+      message.textContent = `All ${loaded.length} file(s) are ready.`;
+    }
+
+    run.disabled = false;
+  });
+
+  run.addEventListener('click', () => {
+    const instruction = document.querySelector('#instruction').value.trim();
+
+    if (!instruction) {
+      message.textContent = 'Enter the outcome you want first.';
+      return;
+    }
+
+    const match = instruction.match(
+      /(?:containing|with|named|at|for)\s+["“]?(.+?)["”]?\s*$/i
+    );
+    const phrase = (match ? match[1] : instruction)
+      .replace(/[.!?]+$/, '')
+      .trim()
+      .toLowerCase();
+
+    const output = [];
+
+    for (const file of loaded) {
+      if (file.error) {
+        output.push(`[${file.name}] NOT PROCESSED: ${file.error}`);
+        continue;
       }
 
-      const match = instruction.match(
-        /(?:containing|with|named)\s+["“]?(.+?)["”]?\s*$/i
-      );
-
-      const phrase = (match ? match[1] : instruction)
-        .replace(/[.!?]+$/, "")
-        .trim()
-        .toLowerCase();
-
-      const matches = fileText
+      const matches = file.text
         .split(/\r?\n/)
         .filter(line => line.toLowerCase().includes(phrase));
 
-      resultText = matches.length
-        ? matches.join("\n")
-        : `No lines found containing “${phrase}”.`;
+      if (matches.length) {
+        output.push(`[${file.name}]\n${matches.join('\n')}`);
+      } else {
+        output.push(`[${file.name}] No lines matched “${phrase}”.`);
+      }
+    }
 
-      resultBox.textContent = resultText;
-      downloadButton.disabled = matches.length === 0;
-      message.textContent = `Found ${matches.length} matching line(s). Review the result.`;
-    });
+    resultText = output.join('\n\n');
+    result.textContent = resultText || 'No files selected.';
+    download.disabled = !resultText;
+    message.textContent =
+      `Instruction applied across ${loaded.length} selected file(s). ` +
+      'Review the per-file results and any files marked NOT PROCESSED.';
+  });
 
-    downloadButton.addEventListener("click", () => {
-      const blob = new Blob([resultText], {
-        type: "text/plain;charset=utf-8"
-      });
+  download.addEventListener('click', () => {
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(
+      new Blob([resultText], { type: 'text/plain;charset=utf-8' })
+    );
 
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = "document-tasker-result.txt";
-      link.click();
-      URL.revokeObjectURL(url);
-    });
-  </script>
+    link.href = url;
+    link.download = 'document-tasker-result.txt';
+    link.click();
+    URL.revokeObjectURL(url);
+  });
+</script>
 </body>
 </html>
