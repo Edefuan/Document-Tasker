@@ -1,3 +1,4 @@
+
 <!doctype html>
 <html lang="en">
 <head>
@@ -6,55 +7,23 @@
   <title>Document Tasker</title>
   <style>
     * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      padding: 36px 20px;
-      background: #f6f7f2;
-      color: #203a31;
-      font: 16px Arial, sans-serif;
-    }
-    main { width: min(100%, 980px); margin: auto; }
+    body { margin: 0; padding: 36px 20px; background: #f6f7f2; color: #203a31; font: 16px Arial, sans-serif; }
+    main { width: min(100%, 1000px); margin: auto; }
     h1 { font-size: 38px; margin: 0 0 8px; }
     h2 { font-size: 21px; margin: 0 0 16px; }
     p { line-height: 1.5; }
     .muted { color: #718079; }
-    .card {
-      margin-top: 24px;
-      padding: 28px;
-      background: white;
-      border: 1px solid #dce5df;
-      border-radius: 14px;
-    }
-    textarea {
-      width: 100%;
-      min-height: 145px;
-      padding: 14px;
-      border: 1px solid #cbd8d0;
-      border-radius: 9px;
-      resize: vertical;
-      font: inherit;
-      line-height: 1.5;
-    }
-    button {
-      margin-top: 16px;
-      padding: 13px 20px;
-      border: 0;
-      border-radius: 8px;
-      background: #287653;
-      color: white;
-      font: inherit;
-      font-weight: 700;
-      cursor: pointer;
-    }
+    .card { margin-top: 24px; padding: 28px; background: white; border: 1px solid #dce5df; border-radius: 14px; }
+    textarea { width: 100%; min-height: 145px; padding: 14px; border: 1px solid #cbd8d0; border-radius: 9px; resize: vertical; font: inherit; line-height: 1.5; }
+    button { margin-top: 16px; padding: 13px 20px; border: 0; border-radius: 8px; background: #287653; color: white; font: inherit; font-weight: 700; cursor: pointer; }
     button:disabled { background: #9cb9aa; cursor: not-allowed; }
     #fileList { margin-top: 8px; overflow-wrap: anywhere; }
     #message { min-height: 24px; }
     #error { color: #a12b2b; }
-    #preview { max-height: 420px; overflow: auto; }
+    #preview { max-height: 440px; overflow: auto; }
     table { width: 100%; border-collapse: collapse; background: white; }
-    th, td { padding: 10px 12px; border: 1px solid #dce5df; text-align: left; }
-    th { background: #edf3ef; }
-    .sheet-title { margin: 18px 0 8px; font-weight: 700; }
+    th, td { padding: 10px 12px; border: 1px solid #dce5df; text-align: left; overflow-wrap: anywhere; }
+    th { background: #edf3ef; position: sticky; top: 0; }
   </style>
 </head>
 <body>
@@ -63,15 +32,16 @@
     <p class="muted">Choose a file, describe the result you want, review it, then download it.</p>
 
     <section class="card">
-      <h2>1. Choose files</h2>
-      <input id="files" type="file" multiple>
+      <h2>1. Choose a file</h2>
+      <input id="fileInput" type="file" multiple>
       <div id="fileList" class="muted"></div>
 
       <h2 style="margin-top:26px">2. Describe what you want</h2>
       <textarea id="instruction">Only give me two columns:
 1. A column with all the names
 2. A column with all the phone numbers</textarea>
-      <button id="apply">Apply instruction to selected file</button>
+
+      <button id="applyButton" type="button">Apply instruction to selected file</button>
       <p id="message" class="muted" role="status"></p>
       <p id="error" role="alert"></p>
     </section>
@@ -80,312 +50,316 @@
       <h2>Result</h2>
       <p id="summary" class="muted">Your result will appear here.</p>
       <div id="preview"></div>
-      <button id="download" disabled>Download result</button>
+      <button id="downloadButton" type="button" disabled>Download Excel result</button>
     </section>
   </main>
 
   <script type="module">
-    const $ = id => document.getElementById(id);
-    let resultBlob = null;
-    let resultFilename = "";
+    const $ = (id) => document.getElementById(id);
+    let selectedFiles = [];
+    let resultRows = null;
 
-    $("files").addEventListener("change", () => {
-      const chosen = [...$("files").files];
-      $("fileList").textContent = chosen.length
-        ? chosen.map(file => file.name).join(", ")
-        : "No files selected.";
+    $("fileInput").addEventListener("change", () => {
+      selectedFiles = [...$("fileInput").files];
+      $("fileList").textContent = selectedFiles.map(file => file.name).join(", ") || "No files selected.";
       clearResult();
     });
 
-    $("apply").addEventListener("click", async () => {
+    $("applyButton").addEventListener("click", async () => {
       clearResult();
-      const file = $("files").files[0];
+      const file = selectedFiles[0];
       const instruction = $("instruction").value.trim();
 
       if (!file) return showError("Choose a file first.");
-      if (!instruction) return showError("Enter the result you want.");
+      if (!instruction) return showError("Describe the result you want.");
 
-      $("apply").disabled = true;
-      $("message").textContent = "Reading your file…";
+      $("applyButton").disabled = true;
+      $("message").textContent = "Reading the file and looking for the requested data…";
 
       try {
-        const ext = extension(file.name);
-        let result;
-
-        if (["xlsx", "xls", "xlsm", "xlsb", "csv", "tsv", "ods"].includes(ext)) {
-          result = await processSpreadsheet(file, instruction);
-        } else if (ext === "docx") {
-          result = await processDocx(file, instruction);
-        } else if (["txt", "md", "json", "html", "log"].includes(ext)) {
-          result = processText(await file.text(), instruction, file.name);
-        } else {
-          throw new Error(
-            `This page can select any file, but it cannot read the contents of .${ext || "unknown"} files yet. This version reads Excel, CSV, TSV, DOCX, TXT, Markdown, JSON, HTML, and LOG files.`
-          );
+        const fields = fieldsRequested(instruction);
+        if (!fields.includes("name") && !fields.includes("phone") && !fields.includes("table")) {
+          throw new Error("For this version, ask for names, phone numbers, and/or table numbers.");
         }
 
-        resultBlob = result.blob;
-        resultFilename = result.filename;
-        $("summary").textContent = result.summary;
-        if (result.tables) showTables(result.tables);
-        else showText(result.text);
-        $("download").disabled = false;
-        $("message").textContent = "Done. Review the result, then download it.";
+        const content = await readFile(file);
+        const rows = extractRequestedData(content, fields);
+
+        if (!rows.length) {
+          throw new Error("I couldn't confidently identify the requested data in this file. Check that the file contains readable text or spreadsheet cells.");
+        }
+
+        resultRows = rows;
+        showPreview(rows);
+        $("summary").textContent = `Found ${rows.length} matching record(s). Review the rows before downloading.`;
+        $("message").textContent = "Done. Your Excel result is ready.";
+        $("downloadButton").disabled = false;
       } catch (err) {
         showError(err instanceof Error ? err.message : "The result could not be created.");
-        $("summary").textContent = "The requested result could not be created.";
         $("message").textContent = "";
       } finally {
-        $("apply").disabled = false;
+        $("applyButton").disabled = false;
       }
     });
 
-    $("download").addEventListener("click", () => {
-      if (!resultBlob) return;
-      const url = URL.createObjectURL(resultBlob);
-      const link = document.createElement("a");
-      link.href = url;
-      link.download = resultFilename;
-      link.click();
-      setTimeout(() => URL.revokeObjectURL(url), 1000);
-    });
-
-    async function processSpreadsheet(file, instruction) {
-      requireNamesAndPhones(instruction);
-      const XLSX = await loadXlsx();
-      const workbook = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: "array" });
-      const output = XLSX.utils.book_new();
-      const tables = [];
-      let total = 0;
-
-      for (const sheetName of workbook.SheetNames) {
-        const sheet = workbook.Sheets[sheetName];
-        const rows = XLSX.utils.sheet_to_json(sheet, {
-          header: 1, raw: true, defval: "", blankrows: true
+    $("downloadButton").addEventListener("click", async () => {
+      if (!resultRows) return;
+      try {
+        const XLSX = await loadXlsx();
+        const workbook = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(resultRows), "Result");
+        const bytes = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
+        const blob = new Blob([bytes], {
+          type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         });
-        const match = findColumns(rows);
-        if (!match) continue;
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${selectedFiles[0].name.replace(/\.[^.]+$/, "")}-result.xlsx`;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+      } catch {
+        showError("Could not create the Excel download. Check your internet connection and try again.");
+      }
+    });
 
-        const outRows = [["NAME", "PHONE NUMBER"]];
-        for (let r = match.headerRow + 1; r < rows.length; r++) {
-          const row = rows[r] || [];
-          const name = formattedCell(XLSX, sheet, r, match.nameCol, row[match.nameCol]);
-          const phone = formattedCell(XLSX, sheet, r, match.phoneCol, row[match.phoneCol]);
-          if (!name && !phone) continue;
-          if (normalize(name) === "name" && normalize(phone).includes("phone")) continue;
-          outRows.push([name, phone]);
-        }
-        if (outRows.length < 2) continue;
+    async function readFile(file) {
+      const ext = file.name.includes(".") ? file.name.split(".").pop().toLowerCase() : "";
 
-        XLSX.utils.book_append_sheet(
-          output,
-          XLSX.utils.aoa_to_sheet(outRows),
-          safeSheetName(sheetName, output.SheetNames)
-        );
-        tables.push({ name: sheetName, rows: outRows });
-        total += outRows.length - 1;
+      if (["xlsx", "xls", "xlsm", "xlsb", "csv", "tsv", "ods"].includes(ext)) {
+        const XLSX = await loadXlsx();
+        const workbook = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: "array", raw: false });
+        return {
+          kind: "sheets",
+          sheets: workbook.SheetNames.map(name => ({
+            name,
+            rows: XLSX.utils.sheet_to_json(workbook.Sheets[name], {
+              header: 1, raw: false, defval: "", blankrows: false
+            })
+          }))
+        };
       }
 
-      if (!tables.length) {
-        throw new Error(
-          "I could not find both a name heading and a phone heading in the workbook. Expected headings such as NAME and PHONE NO."
-        );
+      if (ext === "docx") {
+        const module = await import("https://cdn.jsdelivr.net/npm/mammoth@1.9.0/+esm");
+        const mammoth = module.default || module;
+        const doc = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
+        return { kind: "text", text: doc.value };
       }
 
-      const bytes = XLSX.write(output, { bookType: "xlsx", type: "array" });
-      return {
-        blob: new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
-        filename: `${stem(file.name)}-names-and-phone-numbers.xlsx`,
-        tables,
-        summary: `Prepared ${total} rows in ${tables.length} sheet(s). The Excel file contains only NAME and PHONE NUMBER columns.`
-      };
-    }
-
-    async function processDocx(file, instruction) {
-      requireNamesAndPhones(instruction);
-      const mammoth = await loadMammoth();
-      const arrayBuffer = await file.arrayBuffer();
-      const converted = await mammoth.convertToHtml({ arrayBuffer });
-      const doc = new DOMParser().parseFromString(converted.value, "text/html");
-      const tables = [...doc.querySelectorAll("table")];
-
-      for (const table of tables) {
-        const rows = [...table.querySelectorAll("tr")]
-          .map(tr => [...tr.querySelectorAll("th,td")].map(cell => cell.textContent.trim()));
-        const match = findColumns(rows);
-        if (!match) continue;
-
-        const outputRows = [["NAME", "PHONE NUMBER"]];
-        for (const row of rows.slice(match.headerRow + 1)) {
-          const name = row[match.nameCol] || "";
-          const phone = row[match.phoneCol] || "";
-          if (name || phone) outputRows.push([name, phone]);
+      if (ext === "pdf") {
+        const pdfjs = await import("https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/+esm");
+        pdfjs.GlobalWorkerOptions.workerSrc =
+          "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs";
+        const pdf = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
+        const pages = [];
+        for (let pageNo = 1; pageNo <= pdf.numPages; pageNo++) {
+          const page = await pdf.getPage(pageNo);
+          const content = await page.getTextContent();
+          pages.push(content.items.map(item => item.str).join(" "));
         }
-
-        if (outputRows.length > 1) {
-          return {
-            blob: makeCsv(outputRows),
-            filename: `${stem(file.name)}-names-and-phone-numbers.csv`,
-            tables: [{ name: "Extracted names and phone numbers", rows: outputRows }],
-            summary: `Prepared ${outputRows.length - 1} rows from the Word document. Download the two-column CSV and open it in Excel.`
-          };
-        }
+        return { kind: "text", text: pages.join("\n") };
       }
 
-      throw new Error(
-        "I read the Word document, but could not find a table with both name and phone-number headings. Check that the document table has headings such as NAME and PHONE NO."
-      );
+      if (["txt", "md", "json", "html", "log"].includes(ext)) {
+        return { kind: "text", text: await file.text() };
+      }
+
+      throw new Error(`This index.html version cannot read .${ext || "unknown"} files yet. It supports Excel, CSV, TSV, DOCX, PDF, TXT, Markdown, JSON, HTML, and LOG.`);
     }
 
-    function processText(text, instruction, filename) {
-      const phraseMatch = instruction.match(/(?:containing|with|for|matching)\s+["“]?([^"\n”]+)["”]?/i);
-      const phrase = phraseMatch?.[1]?.trim();
-      const lines = text.split(/\r?\n/).filter(Boolean);
-      const matches = phrase
-        ? lines.filter(line => line.toLowerCase().includes(phrase.toLowerCase()))
-        : lines;
-
-      if (!matches.length) throw new Error("No matching text was found.");
-      const resultText = matches.join("\n");
-      return {
-        blob: new Blob([resultText], { type: "text/plain;charset=utf-8" }),
-        filename: `${stem(filename)}-result.txt`,
-        text: resultText,
-        summary: `Prepared ${matches.length} line(s) as a text download.`
-      };
+    function fieldsRequested(instruction) {
+      const text = instruction.toLowerCase();
+      const fields = [];
+      if (/\bname(s)?\b/.test(text)) fields.push("name");
+      if (/\b(phone|telephone|mobile|cell)\b/.test(text)) fields.push("phone");
+      if (/\b(table|seat)\b/.test(text)) fields.push("table");
+      return fields;
     }
 
-    function findColumns(rows) {
+    function extractRequestedData(content, fields) {
+      const allRows = content.kind === "sheets"
+        ? content.sheets.flatMap(sheet => sheet.rows)
+        : content.text.split(/\r?\n/).map(line => [line]).filter(row => row[0].trim());
+
+      const header = findHeader(allRows);
+      const indexes = header ? header.indexes : inferColumns(allRows, 0);
+      const headings = header ? header.row : [];
+
+      const outputHeaders = [];
+      if (fields.includes("name")) outputHeaders.push("NAME");
+      if (fields.includes("phone")) outputHeaders.push("PHONE NUMBER");
+      if (fields.includes("table")) outputHeaders.push("TABLE NUMBER");
+
+      const output = [outputHeaders];
+      const start = header ? header.index + 1 : 0;
+
+      for (const row of allRows.slice(start)) {
+        const values = row.map(value => String(value ?? "").trim());
+        const phone = indexes.phone >= 0 ? findPhone(values[indexes.phone]) : findPhone(values.join(" "));
+        let name = indexes.name >= 0 ? values[indexes.name] : "";
+        let table = indexes.table >= 0 ? values[indexes.table] : "";
+
+        if (!name || !phone || (fields.includes("table") && !table)) {
+          const parsed = parseRow(values);
+          if (!name) name = parsed.name;
+          if (!phone) phone = parsed.phone;
+          if (!table) table = parsed.table;
+        }
+
+        if (isRepeatedHeading(values, headings)) continue;
+        if (!name && !phone && !table) continue;
+
+        const result = [];
+        if (fields.includes("name")) result.push(name);
+        if (fields.includes("phone")) result.push(phone);
+        if (fields.includes("table")) result.push(table);
+        output.push(result);
+      }
+
+      return output.length > 1 ? output : [];
+    }
+
+    function findHeader(rows) {
       let best = null;
-      let bestScore = 0;
-      for (let r = 0; r < Math.min(rows.length, 60); r++) {
-        let nameCol = -1, phoneCol = -1, nameScore = 0, phoneScore = 0;
-        (rows[r] || []).forEach((value, c) => {
-          const h = normalize(value);
-          const ns = h === "name" ? 10 :
-            ["guestname", "fullname", "guestfullname"].includes(h) ? 8 :
-            h.includes("name") && !h.includes("additional") ? 5 : 0;
-          const ps = ["phoneno", "phonenumber", "mobileno", "mobilenumber", "telephone"].includes(h) ? 10 :
-            /phone|mobile|telephone|cell/.test(h) ? 7 : 0;
-          if (ns > nameScore) { nameScore = ns; nameCol = c; }
-          if (ps > phoneScore) { phoneScore = ps; phoneCol = c; }
+      for (let i = 0; i < Math.min(rows.length, 80); i++) {
+        const row = rows[i] || [];
+        let name = -1, phone = -1, table = -1, score = 0;
+        row.forEach((cell, col) => {
+          const key = normalize(cell);
+          if (["name", "guestname", "fullname", "guestfullname"].includes(key)) { name = col; score += 3; }
+          if (["phoneno", "phonenumber", "mobileno", "mobilenumber", "telephone"].includes(key) || /phone|mobile|telephone/.test(key)) { phone = col; score += 3; }
+          if (/table|seat/.test(key)) { table = col; score += 2; }
         });
-        if (nameCol >= 0 && phoneCol >= 0 && nameScore + phoneScore > bestScore) {
-          best = { headerRow: r, nameCol, phoneCol };
-          bestScore = nameScore + phoneScore;
+        if (name >= 0 || phone >= 0 || table >= 0) {
+          if (!best || score > best.score) best = { index: i, row, score, indexes: { name, phone, table } };
         }
       }
       return best;
     }
 
-    function formattedCell(XLSX, sheet, r, c, fallback) {
-      const cell = sheet[XLSX.utils.encode_cell({ r, c })];
-      if (cell) {
-        const value = XLSX.utils.format_cell(cell);
-        if (value !== undefined && value !== null) return String(value).trim();
+    function inferColumns(rows, start) {
+      const width = Math.max(0, ...rows.slice(start, start + 100).map(row => row.length));
+      const scores = Array.from({ length: width }, () => ({ name: 0, phone: 0, table: 0 }));
+
+      for (const row of rows.slice(start, start + 100)) {
+        row.forEach((cell, col) => {
+          const value = String(cell ?? "").trim();
+          if (!value) return;
+          if (findPhone(value)) scores[col].phone += 1;
+          if (looksLikeName(value)) scores[col].name += 1;
+          if (/^(table|seat)\s*[-:#]?\s*[a-z0-9-]+$/i.test(value)) scores[col].table += 2;
+        });
       }
-      return fallback == null ? "" : String(fallback).trim();
+
+      const best = (field) => {
+        let chosen = -1, score = 0;
+        scores.forEach((item, index) => {
+          if (item[field] > score) { chosen = index; score = item[field]; }
+        });
+        return chosen;
+      };
+
+      return { name: best("name"), phone: best("phone"), table: best("table") };
     }
 
-    function requireNamesAndPhones(instruction) {
-      if (!/\bname(s)?\b/i.test(instruction) ||
-          !/\b(phone|telephone|mobile|cell)\b/i.test(instruction)) {
-        throw new Error("For this extraction, ask for both names and phone numbers.");
+    function parseRow(values) {
+      const combined = values.join(" | ");
+      const phone = findPhone(combined);
+      let table = "";
+      const tableMatch = combined.match(/\b(?:table|seat)\s*[-:#]?\s*([A-Z0-9-]+)/i);
+      if (tableMatch) table = tableMatch[1];
+
+      let name = "";
+      const candidateCells = values.filter(value => value && !findPhone(value) && !/@/.test(value) && looksLikeName(value));
+      if (candidateCells.length) name = candidateCells.sort((a, b) => nameScore(b) - nameScore(a))[0];
+
+      if (!name && phone) {
+        const phoneAt = combined.indexOf(phone);
+        const beforePhone = combined.slice(0, phoneAt).replace(/^\s*\d+[\s.)-]*/, "").trim();
+        const cleaned = beforePhone.replace(/\b(?:table|seat)\s*[-:#]?\s*[A-Z0-9-]+\b/ig, "").trim();
+        if (looksLikeName(cleaned)) name = cleaned;
       }
+
+      return { name, phone, table };
+    }
+
+    function findPhone(value) {
+      const text = String(value ?? "");
+      const candidates = text.match(/(?:\+\s*)?\d[\d\s()./-]{5,}\d/g) || [];
+      for (const candidate of candidates) {
+        const digits = candidate.replace(/\D/g, "");
+        if (digits.length >= 7 && digits.length <= 15) return candidate.trim();
+      }
+      return "";
+    }
+
+    function looksLikeName(value) {
+      const text = String(value ?? "").trim();
+      if (!text || findPhone(text) || /@|https?:\/\//i.test(text) || /^\d+([.,]\d+)?$/.test(text)) return false;
+      if (!/[A-Za-zÀ-ÿ]/.test(text)) return false;
+      const words = text.split(/\s+/);
+      return words.length <= 7 && text.length <= 80 && !/\b(phone|mobile|table no|serial no|email|location|status)\b/i.test(text);
+    }
+
+    function nameScore(value) {
+      const words = String(value).trim().split(/\s+/).length;
+      return (/[A-Za-zÀ-ÿ]/.test(value) ? 5 : 0) + (words >= 2 ? 3 : 0) - String(value).length / 100;
     }
 
     function normalize(value) {
       return String(value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
     }
 
-    function safeSheetName(name, existing) {
-      let base = String(name || "Data").replace(/[\\/?*[\]:]/g, " ").slice(0, 31) || "Data";
-      let candidate = base, n = 2;
-      while (existing.includes(candidate)) {
-        const suffix = ` ${n++}`;
-        candidate = base.slice(0, 31 - suffix.length) + suffix;
-      }
-      return candidate;
+    function isRepeatedHeading(values, headings) {
+      if (!headings.length) return false;
+      return values.length >= headings.length &&
+        values.slice(0, headings.length).every((value, index) => normalize(value) === normalize(headings[index]));
     }
 
-    function showTables(tables) {
-      $("preview").replaceChildren();
-      for (const item of tables) {
-        const title = document.createElement("div");
-        title.className = "sheet-title";
-        title.textContent = item.name;
-        $("preview").appendChild(title);
+    function showPreview(rows) {
+      const table = document.createElement("table");
+      const thead = document.createElement("thead");
+      const headerRow = document.createElement("tr");
+      rows[0].forEach(value => {
+        const th = document.createElement("th");
+        th.textContent = value;
+        headerRow.appendChild(th);
+      });
+      thead.appendChild(headerRow);
 
-        const table = document.createElement("table");
-        const thead = document.createElement("thead");
-        const trHead = document.createElement("tr");
-        item.rows[0].forEach(value => {
-          const th = document.createElement("th");
-          th.textContent = value;
-          trHead.appendChild(th);
+      const tbody = document.createElement("tbody");
+      rows.slice(1, 101).forEach(row => {
+        const tr = document.createElement("tr");
+        row.forEach(value => {
+          const td = document.createElement("td");
+          td.textContent = value;
+          tr.appendChild(td);
         });
-        thead.appendChild(trHead);
-
-        const tbody = document.createElement("tbody");
-        item.rows.slice(1, 31).forEach(row => {
-          const tr = document.createElement("tr");
-          row.forEach(value => {
-            const td = document.createElement("td");
-            td.textContent = value;
-            tr.appendChild(td);
-          });
-          tbody.appendChild(tr);
-        });
-        table.append(thead, tbody);
-        $("preview").appendChild(table);
+        tbody.appendChild(tr);
+      });
+      table.append(thead, tbody);
+      $("preview").replaceChildren(table);
+      if (rows.length > 101) {
+        const note = document.createElement("p");
+        note.className = "muted";
+        note.textContent = `Preview shows 100 records. The download includes all ${rows.length - 1}.`;
+        $("preview").appendChild(note);
       }
-    }
-
-    function showText(text) {
-      const pre = document.createElement("pre");
-      pre.textContent = text;
-      pre.style.whiteSpace = "pre-wrap";
-      $("preview").replaceChildren(pre);
-    }
-
-    function makeCsv(rows) {
-      const csv = rows.map(row => row.map(value =>
-        `"${String(value ?? "").replace(/"/g, '""')}"`
-      ).join(",")).join("\r\n");
-      return new Blob(["\ufeff", csv], { type: "text/csv;charset=utf-8" });
     }
 
     async function loadXlsx() {
-      try {
-        const module = await import("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm");
-        return module.default || module;
-      } catch {
-        throw new Error("Could not load the spreadsheet reader. Check your internet connection and reload.");
-      }
+      const module = await import("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm");
+      return module.default || module;
     }
-
-    async function loadMammoth() {
-      try {
-        const module = await import("https://cdn.jsdelivr.net/npm/mammoth@1.9.0/+esm");
-        return module.default || module;
-      } catch {
-        throw new Error("Could not load the Word document reader. Check your internet connection and reload.");
-      }
-    }
-
-    function extension(name) {
-      return name.includes(".") ? name.split(".").pop().toLowerCase() : "";
-    }
-    function stem(name) { return name.replace(/\.[^.]+$/, ""); }
 
     function showError(text) { $("error").textContent = text; }
 
     function clearResult() {
-      resultBlob = null;
-      resultFilename = "";
-      $("download").disabled = true;
-      $("message").textContent = "";
+      resultRows = null;
+      $("downloadButton").disabled = true;
       $("error").textContent = "";
+      $("message").textContent = "";
       $("summary").textContent = "Your result will appear here.";
       $("preview").replaceChildren();
     }
