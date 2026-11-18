@@ -53,7 +53,7 @@
       <button id="downloadButton" type="button" disabled>Download Excel result</button>
     </section>
   </main>
-
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <script type="module">
     const $ = (id) => document.getElementById(id);
     let selectedFiles = [];
@@ -348,10 +348,12 @@
       }
     }
 
-    async function loadXlsx() {
-      const module = await import("https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm");
-      return module.default || module;
-    }
+   async function loadXlsx() {
+  if (!window.XLSX) {
+    throw new Error("The Excel reader did not load. Check your internet connection and reload the page.");
+  }
+  return window.XLSX;
+}
 
     function showError(text) { $("error").textContent = text; }
 
