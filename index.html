@@ -4,10 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Document Tasker</title>
-
-  <!-- Load SheetJS as a browser script so it uses window.XLSX. -->
   <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
-
   <style>
     * { box-sizing: border-box; }
     body { margin: 0; padding: 36px 20px; background: #f6f7f2; color: #203a31; font: 16px Arial, sans-serif; }
@@ -18,11 +15,12 @@
     .muted { color: #718079; }
     .card { margin-top: 24px; padding: 28px; background: white; border: 1px solid #dce5df; border-radius: 14px; }
     textarea { width: 100%; min-height: 145px; padding: 14px; border: 1px solid #cbd8d0; border-radius: 9px; resize: vertical; font: inherit; line-height: 1.5; }
+    select { margin: 8px 0 18px; padding: 10px; border: 1px solid #cbd8d0; border-radius: 8px; font: inherit; }
     button { margin-top: 16px; padding: 13px 20px; border: 0; border-radius: 8px; background: #287653; color: white; font: inherit; font-weight: 700; cursor: pointer; }
     button:disabled { background: #9cb9aa; cursor: not-allowed; }
     #fileList { margin-top: 8px; overflow-wrap: anywhere; }
     #message { min-height: 24px; }
-    #error { color: #a12b2b; }
+    #error { color: #a12b2b; white-space: pre-wrap; }
     #preview { max-height: 440px; overflow: auto; }
     table { width: 100%; border-collapse: collapse; background: white; }
     th, td { padding: 10px 12px; border: 1px solid #dce5df; text-align: left; overflow-wrap: anywhere; }
@@ -40,10 +38,26 @@
       <div id="fileList" class="muted"></div>
 
       <h2 style="margin-top:26px">2. Describe what you want</h2>
-      <textarea id="instruction">Only give me two columns:
-1. A column with all the names
-2. A column with all the phone numbers</textarea>
+      <textarea id="instruction">I want 2 columns:
+Column 1 - guest names in alphabetical order
+Column 2 - phone numbers formatted as E164</textarea>
 
+      <p class="muted">Country to use for phone numbers that do not include a country code:</p>
+      <select id="defaultCountry" aria-label="Default country for local phone numbers">
+        <option value="US">United States (+1)</option>
+        <option value="GB">United Kingdom (+44)</option>
+        <option value="NG">Nigeria (+234)</option>
+        <option value="CA">Canada (+1)</option>
+        <option value="AU">Australia (+61)</option>
+        <option value="IE">Ireland (+353)</option>
+        <option value="GH">Ghana (+233)</option>
+        <option value="ZA">South Africa (+27)</option>
+        <option value="IN">India (+91)</option>
+        <option value="FR">France (+33)</option>
+        <option value="DE">Germany (+49)</option>
+      </select>
+
+      <br>
       <button id="applyButton" type="button">Apply instruction to selected file</button>
       <p id="message" class="muted" role="status"></p>
       <p id="error" role="alert"></p>
@@ -79,25 +93,40 @@
       if (!window.XLSX) return showError("The Excel reader did not load. Check your internet connection and reload.");
 
       $("applyButton").disabled = true;
-      $("message").textContent = "Reading the file and looking for the requested data…";
+      $("message").textContent = "Reading the file, detecting records, and formatting phone numbers…";
 
       try {
+        const phoneParser = await loadPhoneParser();
         const fields = fieldsRequested(instruction);
+
         if (!fields.length) {
           throw new Error("Ask for names, phone numbers, and/or table numbers.");
         }
 
         const data = await readFile(file);
-        const rows = extractRequestedData(data, fields);
+        const rows = extractRequestedData(data, fields, phoneParser);
+        const invalidPhones = rows.invalidPhones;
 
-        if (!rows.length) {
-          throw new Error("I couldn't identify the requested data in this file. It may be in an unsupported format or may not contain readable text.");
+        if (invalidPhones.length) {
+          throw new Error(
+            "These phone numbers could not be validated and converted to E.164. Check the selected default country or correct the source values:\n" +
+            invalidPhones.slice(0, 15).join("\n") +
+            (invalidPhones.length > 15 ? `\n…and ${invalidPhones.length - 15} more.` : "")
+          );
         }
 
-        resultRows = rows;
-        showPreview(rows);
+        if (!rows.data.length) {
+          throw new Error("I couldn't identify the requested data in this file. It may not contain readable names or numbers.");
+        }
+
+        resultRows = rows.data;
+        showPreview(resultRows);
+
+        const sortedMessage = wantsAlphabetical(instruction)
+          ? " Names are sorted alphabetically."
+          : "";
         $("summary").textContent =
-          `Found ${rows.length - 1} record(s). Review them before downloading.`;
+          `Found ${resultRows.length - 1} record(s). Phone numbers are formatted as E.164.${sortedMessage} Review them before downloading.`;
         $("message").textContent = "Done. Your Excel result is ready.";
         $("downloadButton").disabled = false;
       } catch (err) {
@@ -113,13 +142,11 @@
 
       try {
         const workbook = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(
+        XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet(resultRows), "Result");
+        XLSX.writeFile(
           workbook,
-          XLSX.utils.aoa_to_sheet(resultRows),
-          "Result"
+          `${selectedFiles[0].name.replace(/\.[^.]+$/, "")}-result.xlsx`
         );
-        const fileName = `${selectedFiles[0].name.replace(/\.[^.]+$/, "")}-result.xlsx`;
-        XLSX.writeFile(workbook, fileName);
       } catch {
         showError("Could not create the Excel download. Reload the page and try again.");
       }
@@ -190,23 +217,26 @@
       const text = instruction.toLowerCase();
       const fields = [];
 
-      if (/\bname(s)?\b/.test(text)) fields.push("name");
+      if (/\bname(s)?\b/.test(text) || /\bguest(s)?\b/.test(text)) fields.push("name");
       if (/\b(phone|telephone|mobile|cell)\b/.test(text) ||
-          (/\bnumber(s)?\b/.test(text) && /\bname(s)?\b/.test(text))) {
-        fields.push("phone");
-      }
+          (/\bnumber(s)?\b/.test(text) && /\b(name|guest)/.test(text))) fields.push("phone");
       if (/\b(table|seat)\b/.test(text)) fields.push("table");
 
-      return fields;
+      return [...new Set(fields)];
     }
 
-    function extractRequestedData(data, fields) {
-      const outputHeaders = [];
-      if (fields.includes("name")) outputHeaders.push("NAME");
-      if (fields.includes("phone")) outputHeaders.push("PHONE NUMBER");
-      if (fields.includes("table")) outputHeaders.push("TABLE NUMBER");
+    function wantsAlphabetical(instruction) {
+      return /\balphabetical(ly)?\b|\ba\s*to\s*z\b|\bsort\b|\border\b/i.test(instruction);
+    }
 
-      const output = [outputHeaders];
+    function extractRequestedData(data, fields, phoneParser) {
+      const headers = [];
+      if (fields.includes("name")) headers.push("NAME");
+      if (fields.includes("phone")) headers.push("PHONE NUMBER (E.164)");
+      if (fields.includes("table")) headers.push("TABLE NUMBER");
+
+      const output = [headers];
+      const invalidPhones = [];
       const sheets = data.kind === "sheets"
         ? data.sheets
         : [{ name: "Document", rows: data.text.split(/\r?\n/).filter(Boolean).map(line => [line]) }];
@@ -214,35 +244,54 @@
       for (const sheet of sheets) {
         const rows = sheet.rows || [];
         const header = findHeader(rows);
-        const dataStart = header ? header.index + 1 : 0;
-        const sourceRows = rows.slice(dataStart);
-        const indexes = inferColumns(sourceRows, header?.indexes);
+        const dataRows = rows.slice(header ? header.index + 1 : 0);
+        const indexes = inferColumns(dataRows, header?.indexes);
 
-        for (const row of sourceRows) {
+        for (const row of dataRows) {
           const values = row.map(value => String(value ?? "").trim());
           if (!values.some(Boolean)) continue;
           if (header && isRepeatedHeading(values, header.row)) continue;
 
           const parsed = parseRow(values);
           let name = indexes.name >= 0 ? values[indexes.name] : "";
-          let phone = indexes.phone >= 0 ? findPhone(values[indexes.phone]) : "";
+          let rawPhone = indexes.phone >= 0 ? findPhone(values[indexes.phone]) : "";
           let table = indexes.table >= 0 ? values[indexes.table] : "";
 
           if (!looksLikeName(name)) name = parsed.name;
-          if (!phone) phone = parsed.phone;
-          if (!table || !/\S/.test(table)) table = parsed.table;
+          if (!rawPhone) rawPhone = parsed.phone;
+          if (!table || !String(table).trim()) table = parsed.table;
 
-          if (!name && !phone && !table) continue;
+          if (!name && !rawPhone && !table) continue;
+
+          const region = inferRegion(values, $("defaultCountry").value);
+          let e164 = "";
+
+          if (rawPhone) {
+            e164 = toE164(rawPhone, region, phoneParser);
+            if (!e164) invalidPhones.push(`${name || "(name not detected)"}: ${rawPhone} [country used: ${region}]`);
+          }
 
           const record = [];
           if (fields.includes("name")) record.push(name);
-          if (fields.includes("phone")) record.push(phone);
+          if (fields.includes("phone")) record.push(e164);
           if (fields.includes("table")) record.push(table);
           output.push(record);
         }
       }
 
-      return output.length > 1 ? output : [];
+      if (wantsAlphabetical($("instruction").value) && fields.includes("name")) {
+        const nameColumn = 0;
+        const data = output.slice(1).sort((a, b) =>
+          String(a[nameColumn] || "").localeCompare(
+            String(b[nameColumn] || ""),
+            undefined,
+            { sensitivity: "base", numeric: true }
+          )
+        );
+        output.splice(1, output.length - 1, ...data);
+      }
+
+      return { data: output.length > 1 ? output : [], invalidPhones };
     }
 
     function findHeader(rows) {
@@ -286,7 +335,11 @@
     function inferColumns(rows, headerIndexes = {}) {
       const width = Math.max(0, ...rows.slice(0, 150).map(row => row.length));
       const scores = Array.from({ length: width }, () => ({
-        name: 0, phone: 0, tableLabel: 0, shortNumber: 0, numericValues: []
+        name: 0,
+        phone: 0,
+        tableLabel: 0,
+        shortNumber: 0,
+        numericValues: []
       }));
 
       for (const row of rows.slice(0, 150)) {
@@ -294,45 +347,42 @@
           const value = String(cell ?? "").trim();
           if (!value) return;
 
-          if (findPhone(value)) scores[column].phone += 1;
+          if (findPhone(value)) scores[column].phone++;
           if (looksLikeName(value)) scores[column].name += nameValueScore(value);
           if (/^(table|seat)\s*[-:#]?\s*[a-z0-9-]+$/i.test(value)) scores[column].tableLabel += 3;
+
           if (/^\d{1,3}$/.test(value)) {
-            scores[column].shortNumber += 1;
+            scores[column].shortNumber++;
             scores[column].numericValues.push(Number(value));
           }
         });
       }
 
       function highest(field) {
-        let result = -1;
-        let highestScore = 0;
-        scores.forEach((score, column) => {
-          if (score[field] > highestScore) {
-            result = column;
-            highestScore = score[field];
+        let chosen = -1, score = 0;
+        scores.forEach((item, index) => {
+          if (item[field] > score) {
+            chosen = index;
+            score = item[field];
           }
         });
-        return result;
+        return chosen;
       }
 
-      let name = Number.isInteger(headerIndexes.name) && headerIndexes.name >= 0
-        ? headerIndexes.name : highest("name");
-      let phone = Number.isInteger(headerIndexes.phone) && headerIndexes.phone >= 0
-        ? headerIndexes.phone : highest("phone");
-      let table = Number.isInteger(headerIndexes.table) && headerIndexes.table >= 0
-        ? headerIndexes.table : highest("tableLabel");
+      const name = headerIndexes.name >= 0 ? headerIndexes.name : highest("name");
+      const phone = headerIndexes.phone >= 0 ? headerIndexes.phone : highest("phone");
+      let table = headerIndexes.table >= 0 ? headerIndexes.table : highest("tableLabel");
 
-      // Infer a bare-number table column only when it does not look like a serial-number sequence.
       if (table < 0) {
         let bestScore = 0;
-        scores.forEach((score, column) => {
-          if (column === phone || score.shortNumber < 2) return;
-          const uniqueRatio = new Set(score.numericValues).size / score.numericValues.length;
-          const sequential = isMostlySequential(score.numericValues);
-          if (uniqueRatio < 0.85 && !sequential && score.shortNumber > bestScore) {
-            bestScore = score.shortNumber;
-            table = column;
+        scores.forEach((item, index) => {
+          if (index === phone || item.shortNumber < 2) return;
+          const uniqueRatio = new Set(item.numericValues).size / item.numericValues.length;
+          if (uniqueRatio < 0.85 &&
+              !isMostlySequential(item.numericValues) &&
+              item.shortNumber > bestScore) {
+            bestScore = item.shortNumber;
+            table = index;
           }
         });
       }
@@ -346,10 +396,10 @@
       const tableMatch = combined.match(/\b(?:table|seat)\s*[-:#]?\s*([A-Z0-9-]+)/i);
       const table = tableMatch ? tableMatch[1] : "";
 
-      let name = "";
       const candidates = values.filter(value =>
         looksLikeName(value) && !/@/.test(value) && !findPhone(value)
       );
+      let name = "";
 
       if (candidates.length) {
         candidates.sort((a, b) => nameValueScore(b) - nameValueScore(a));
@@ -369,8 +419,10 @@
     }
 
     function findPhone(value) {
-      // Ignore explicit table/seat labels so their digits are not joined to a phone number.
-      const text = String(value ?? "").replace(/\b(?:table|seat)\s*[-:#]?\s*[A-Z0-9-]+/ig, " ");
+      const text = String(value ?? "").replace(
+        /\b(?:table|seat)\s*[-:#]?\s*[A-Z0-9-]+/ig,
+        " "
+      );
       const matches = text.match(/\+?\d[\d\s()./-]{5,}\d/g) || [];
 
       for (const match of matches) {
@@ -380,14 +432,50 @@
       return "";
     }
 
+    async function loadPhoneParser() {
+      try {
+        const module = await import("https://cdn.jsdelivr.net/npm/libphonenumber-js@1.13.16/+esm");
+        return module.parsePhoneNumberFromString;
+      } catch {
+        throw new Error("The phone-number formatter did not load. Check your internet connection and reload.");
+      }
+    }
+
+    function toE164(raw, region, parsePhoneNumberFromString) {
+      try {
+        let value = String(raw).trim().replace(/^00/, "+");
+        const parsed = parsePhoneNumberFromString(value, region);
+        if (!parsed || !parsed.isValid()) return "";
+        return parsed.number;
+      } catch {
+        return "";
+      }
+    }
+
+    function inferRegion(values, fallback) {
+      const text = values.join(" ").toLowerCase();
+
+      if (/\b(nigeria|nigerian|ngn)\b/.test(text)) return "NG";
+      if (/\b(united kingdom|great britain|england|scotland|wales|northern ireland|uk)\b/.test(text)) return "GB";
+      if (/\b(united states|usa|u\.s\.a\.|america)\b/.test(text)) return "US";
+      if (/\b(canada|canadian)\b/.test(text)) return "CA";
+      if (/\b(australia|australian)\b/.test(text)) return "AU";
+      if (/\b(ghana|ghanaian)\b/.test(text)) return "GH";
+      if (/\b(south africa|south african)\b/.test(text)) return "ZA";
+      if (/\b(ireland|irish)\b/.test(text)) return "IE";
+      if (/\b(india|indian)\b/.test(text)) return "IN";
+      if (/\b(france|french)\b/.test(text)) return "FR";
+      if (/\b(germany|german)\b/.test(text)) return "DE";
+
+      return fallback;
+    }
+
     function looksLikeName(value) {
       const text = String(value ?? "").trim();
       if (!text || findPhone(text) || /@|https?:\/\//i.test(text)) return false;
       if (/^\d+([.,]\d+)?$/.test(text) || !/[A-Za-zÀ-ÿ]/.test(text)) return false;
       if (/\b(phone|mobile|table no|serial no|email|location|status)\b/i.test(text)) return false;
-
-      const words = text.split(/\s+/);
-      return words.length <= 7 && text.length <= 80;
+      return text.split(/\s+/).length <= 7 && text.length <= 80;
     }
 
     function nameValueScore(value) {
@@ -397,11 +485,11 @@
 
     function isMostlySequential(values) {
       if (values.length < 3) return false;
-      let sequentialSteps = 0;
+      let sequential = 0;
       for (let i = 1; i < values.length; i++) {
-        if (values[i] === values[i - 1] + 1) sequentialSteps++;
+        if (values[i] === values[i - 1] + 1) sequential++;
       }
-      return sequentialSteps / (values.length - 1) > 0.75;
+      return sequential / (values.length - 1) > 0.75;
     }
 
     function normalize(value) {
