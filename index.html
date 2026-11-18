@@ -2,30 +2,35 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Document Tasker</title>
 <style>
 *{box-sizing:border-box}
 body{margin:0;background:#f6f6f1;color:#20352c;font:16px Arial,sans-serif}
 main{max-width:960px;margin:36px auto;padding:24px}
 h1{margin:0 0 8px;font-size:40px}
-p{color:#68766e;line-height:1.5}
+.intro,.help{color:#68766e;line-height:1.5}
 .panel{margin-top:20px;padding:24px;border:1px solid #e0e5df;border-radius:12px;background:#fff}
 label{display:block;margin:18px 0 9px;font-weight:bold}
 input[type=file],textarea{width:100%}
 textarea{min-height:130px;padding:12px;border:1px solid #cfd8d0;border-radius:7px;font:inherit;line-height:1.5}
 button{padding:11px 16px;border:0;border-radius:7px;background:#287452;color:#fff;font-weight:bold;cursor:pointer}
 button:disabled{opacity:.45;cursor:not-allowed}
+.primary{margin-top:14px}
+#message{white-space:pre-wrap;line-height:1.5;color:#68766e}
 #fileList button{margin:5px 6px 5px 0;padding:7px 10px;background:#edf3ee;color:#315c45;font-weight:normal}
 #fileList button.active{background:#287452;color:#fff}
-#message{white-space:pre-wrap}
 pre{max-height:420px;overflow:auto;padding:16px;border-radius:7px;background:#f5f7f4;white-space:pre-wrap;line-height:1.5}
+@media(max-width:600px){main{margin:16px auto;padding:16px}}
 </style>
 </head>
 <body>
 <main>
   <h1>Document Tasker</h1>
-  <p>Upload a file, describe the result you want, then review and download it. Formula columns are created automatically from your instruction.</p>
+  <p class="intro">
+    Upload a file, describe the result you want, review it, and download it.
+    Guest lists grouped by table are split into matching guest, phone, and table columns.
+  </p>
 
   <section class="panel">
     <label for="files">1. Choose files</label>
@@ -34,17 +39,16 @@ pre{max-height:420px;overflow:auto;padding:16px;border-radius:7px;background:#f5
     <p id="message">Select one or more files to begin.</p>
 
     <label for="instruction">2. Describe what you want</label>
-    <textarea id="instruction" placeholder="For example:
-Using information from the Data, create 2 new columns:
-1. Phone numbers, following the order of names and matching each guest.
-2. Table names and numbers, following the order and matching each guest."></textarea>
+    <textarea id="instruction" placeholder="Using information from the Data, create 2 new columns:
+A new column containing all phone numbers, following the order of names and matching each guest.
+Another column containing the table names and numbers, following the order and matching each guest."></textarea>
 
-    <button id="apply" disabled>Apply instruction to selected file</button>
+    <button id="apply" class="primary" disabled>Apply instruction to selected file</button>
   </section>
 
   <section class="panel">
     <strong>Result</strong>
-    <p id="note">Your result will appear here.</p>
+    <p id="note" class="help">Your result will appear here.</p>
     <pre id="result">No result yet.</pre>
     <button id="download" disabled>Download result</button>
   </section>
@@ -53,8 +57,8 @@ Using information from the Data, create 2 new columns:
 <script type="module">
 const fileInput = document.querySelector('#files');
 const fileList = document.querySelector('#fileList');
-const instructionInput = document.querySelector('#instruction');
 const message = document.querySelector('#message');
+const instruction = document.querySelector('#instruction');
 const applyButton = document.querySelector('#apply');
 const note = document.querySelector('#note');
 const resultBox = document.querySelector('#result');
@@ -63,166 +67,211 @@ const downloadButton = document.querySelector('#download');
 let files = [];
 let activeIndex = -1;
 let resultBlob = null;
-let resultName = '';
+let downloadName = '';
 let xlsxModule;
+
+const spreadsheetTypes = new Set([
+  'xlsx', 'xls', 'xlsm', 'xlsb', 'csv', 'tsv', 'ods'
+]);
+
+function extension(name) {
+  return name.includes('.') ? name.split('.').pop().toLowerCase() : '';
+}
 
 async function getXLSX() {
   if (!xlsxModule) {
-    const module = await import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm');
+    const module = await import(
+      'https://cdn.jsdelivr.net/npm/xlsx@0.18.5/+esm'
+    );
     xlsxModule = module.default || module;
   }
   return xlsxModule;
 }
 
-function ext(name) {
-  return name.includes('.') ? name.split('.').pop().toLowerCase() : '';
-}
-
-function normalize(value) {
-  return String(value ?? '').toLowerCase().replace(/[^a-z0-9]/g, '');
-}
-
-function findHeaderRow(rows) {
-  let bestIndex = -1;
-  let bestScore = 0;
-
-  for (let i = 0; i < Math.min(rows.length, 30); i++) {
-    const values = rows[i].map(normalize);
-    let score = 0;
-    if (values.some(v => /guestname|fullname|personname|^name$/.test(v))) score += 3;
-    if (values.some(v => /phone|mobile|telephone|contact|whatsapp|qrcode|qrto/.test(v))) score += 3;
-    if (values.some(v => /table|seat/.test(v))) score += 2;
-    if (score > bestScore) {
-      bestScore = score;
-      bestIndex = i;
-    }
-  }
-
-  return bestIndex >= 0 ? bestIndex : rows.findIndex(row =>
-    row.some(value => String(value).trim() !== '')
-  );
-}
-
-function findColumn(headers, kind) {
-  const normalized = headers.map(normalize);
-
-  if (kind === 'phone') {
-    return normalized.findIndex(value =>
-      /phone|mobile|telephone|contact|whatsapp|qrcode|qrto/.test(value)
-    );
-  }
-
-  if (kind === 'tableName') {
-    return normalized.findIndex(value => /tablename/.test(value));
-  }
-
-  if (kind === 'tableNumber') {
-    return normalized.findIndex(value => /table(number|no|num)?$|seat(number|no|num)?$/.test(value));
-  }
-
-  return -1;
-}
-
-function cellRef(XLSX, rowNumber, columnIndex) {
-  return XLSX.utils.encode_cell({ r: rowNumber - 1, c: columnIndex });
-}
-
-function autoColumns(instruction, headers, XLSX, firstRow) {
-  const text = instruction.toLowerCase();
-  const asksForPhone = /phone|mobile|telephone|contact|qr code/.test(text);
-  const asksForTable = /table name|table number|table no|table names|table numbers/.test(text);
-  const asksForTwo = /2\s+new columns|two\s+new columns|create\s+2\s+columns/.test(text);
-
-  const phoneIndex = findColumn(headers, 'phone');
-  const tableNameIndex = findColumn(headers, 'tableName');
-  const tableNumberIndex = findColumn(headers, 'tableNumber');
-
-  const columns = [];
-
-  if ((asksForPhone || asksForTwo) && phoneIndex >= 0) {
-    columns.push({
-      name: 'PHONE NUMBERS',
-      makeFormula: row => {
-        const phone = cellRef(XLSX, row, phoneIndex);
-        return `IF(${phone}="","",${phone})`;
-      }
-    });
-  }
-
-  if ((asksForTable || asksForTwo) && (tableNameIndex >= 0 || tableNumberIndex >= 0)) {
-    columns.push({
-      name: 'TABLE NAMES AND NUMBERS',
-      makeFormula: row => {
-        const name = tableNameIndex >= 0 ? cellRef(XLSX, row, tableNameIndex) : '';
-        const number = tableNumberIndex >= 0 ? cellRef(XLSX, row, tableNumberIndex) : '';
-        if (name && number) {
-          return `IF(${number}="","",IF(${name}="", "Table "&${number},${name}&" "&${number}))`;
-        }
-        const source = name || number;
-        return `IF(${source}="","",IF(ISNUMBER(SEARCH("table",${source})),${source},"Table "&${source}))`;
-      }
-    });
-  }
-
-  return columns;
-}
-
-function getFilterPhrase(instruction) {
-  const match = instruction.match(/(?:containing|with|named|at|for)\s+["“]?([^"”.,;]+)["”]?/i);
-  return match?.[1]?.trim() || '';
-}
-
 async function readFile(file) {
-  const extension = ext(file.name);
+  const ext = extension(file.name);
 
-  if (['xlsx','xls','xlsm','xlsb','csv','tsv','ods'].includes(extension)) {
+  if (spreadsheetTypes.has(ext)) {
     const XLSX = await getXLSX();
     const bytes = new Uint8Array(await file.arrayBuffer());
     const workbook = XLSX.read(bytes, { type: 'array', cellFormula: true });
-    return { name: file.name, extension, kind: 'spreadsheet', bytes, workbook };
+    return { name: file.name, ext, kind: 'spreadsheet', bytes, workbook };
   }
 
-  if (['txt','md','json','xml','html','htm','log'].includes(extension)) {
-    return { name: file.name, extension, kind: 'text', text: await file.text() };
+  if (['txt', 'md', 'json', 'xml', 'html', 'htm', 'log'].includes(ext)) {
+    return { name: file.name, ext, kind: 'text', text: await file.text() };
   }
 
-  if (extension === 'docx') {
-    const module = await import('https://cdn.jsdelivr.net/npm/mammoth@1.9.0/+esm');
+  if (ext === 'docx') {
+    const module = await import(
+      'https://cdn.jsdelivr.net/npm/mammoth@1.9.0/+esm'
+    );
     const mammoth = module.default || module;
-    const value = await mammoth.extractRawText({ arrayBuffer: await file.arrayBuffer() });
-    return { name: file.name, extension, kind: 'text', text: value.value };
+    const extracted = await mammoth.extractRawText({
+      arrayBuffer: await file.arrayBuffer()
+    });
+    return { name: file.name, ext, kind: 'text', text: extracted.value };
   }
 
-  if (extension === 'pdf') {
-    const pdfjs = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/+esm');
+  if (ext === 'pdf') {
+    const pdfjs = await import(
+      'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/+esm'
+    );
     pdfjs.GlobalWorkerOptions.workerSrc =
       'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.min.mjs';
-    const pdf = await pdfjs.getDocument({ data: await file.arrayBuffer() }).promise;
-    const pages = [];
 
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
+    const pdf = await pdfjs.getDocument({
+      data: await file.arrayBuffer()
+    }).promise;
+
+    const pages = [];
+    for (let number = 1; number <= pdf.numPages; number++) {
+      const page = await pdf.getPage(number);
       const content = await page.getTextContent();
       pages.push(content.items.map(item => item.str).join(' '));
     }
 
-    return { name: file.name, extension, kind: 'text', text: pages.join('\n\n') };
+    return { name: file.name, ext, kind: 'text', text: pages.join('\n\n') };
   }
 
-  throw new Error('This file was selected, but this version does not yet read its format.');
+  throw new Error('This file was selected, but this version cannot read its format.');
+}
+
+function findPhone(line) {
+  const matches = [...line.matchAll(/\+?\d[\d\s().-]{6,}\d/g)];
+
+  for (let i = matches.length - 1; i >= 0; i--) {
+    const digits = matches[i][0].replace(/\D/g, '');
+    if (digits.length >= 7 && digits.length <= 15) {
+      return { value: digits, position: matches[i].index };
+    }
+  }
+
+  return null;
+}
+
+function parseGroupedGuestList(workbook, XLSX) {
+  const output = [['Guest Name', 'Phone Number', 'Table Name and Number']];
+  let currentTable = '';
+  let foundTable = false;
+
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    if (!sheet['!ref']) continue;
+
+    const rows = XLSX.utils.sheet_to_json(sheet, {
+      header: 1,
+      defval: '',
+      raw: true,
+      blankrows: true
+    });
+
+    for (const row of rows) {
+      const line = row
+        .map(value => String(value ?? '').trim())
+        .filter(Boolean)
+        .join(' ')
+        .replace(/\u00a0/g, ' ')
+        .trim();
+
+      if (!line) continue;
+
+      // Recognizes headings such as “ROYAL table 1” and “Table 2”.
+      const tableHeading = line.match(/^(.*?)\btable\s*#?\s*(\d+)\s*$/i);
+      if (tableHeading) {
+        const name = tableHeading[1].trim();
+        currentTable = name ? `${name} table ${tableHeading[2]}` : `Table ${tableHeading[2]}`;
+        foundTable = true;
+        continue;
+      }
+
+      if (!currentTable) continue;
+
+      const phone = findPhone(line);
+      if (phone) {
+        const guestName = line.slice(0, phone.position)
+          .replace(/[\s,;:.-]+$/, '')
+          .trim();
+
+        if (guestName) {
+          output.push([guestName, phone.value, currentTable]);
+        }
+      } else if (!/^(data|guest list|names?)$/i.test(line)) {
+        // Retain a guest entry even when that row has no phone number.
+        output.push([line, '', currentTable]);
+      }
+    }
+  }
+
+  if (!foundTable) {
+    throw new Error('No table heading was found. Expected headings such as “ROYAL table 1”.');
+  }
+
+  if (output.length === 1) {
+    throw new Error('Table headings were found, but no guest entries could be read.');
+  }
+
+  const sheet = XLSX.utils.aoa_to_sheet(output);
+  sheet['!cols'] = [{ wch: 30 }, { wch: 20 }, { wch: 32 }];
+
+  const resultWorkbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(resultWorkbook, sheet, 'Guest List');
+
+  return { workbook: resultWorkbook, rows: output };
+}
+
+function isGuestListInstruction(text) {
+  return /phone|mobile|telephone/i.test(text) &&
+    /table/i.test(text) &&
+    /name|guest|order|matching|match/i.test(text);
+}
+
+function filterWorkbook(workbook, text, XLSX) {
+  const match = text.match(
+    /(?:containing|with|named|at|for)\s+["“]?([^"”.,;]+)["”]?/i
+  );
+  const phrase = match?.[1]?.trim();
+  const shouldFilter = phrase && /\b(only|filter|show|keep|bring out)\b/i.test(text);
+
+  if (!shouldFilter) return workbook;
+
+  for (const name of workbook.SheetNames) {
+    const sheet = workbook.Sheets[name];
+    if (!sheet['!ref']) continue;
+
+    const rows = XLSX.utils.sheet_to_json(sheet, {
+      header: 1, defval: '', raw: true, blankrows: true
+    });
+    const header = rows.findIndex(row =>
+      row.some(value => String(value).trim() !== '')
+    );
+    if (header < 0) continue;
+
+    const kept = rows.slice(0, header + 1).concat(
+      rows.slice(header + 1).filter(row =>
+        row.some(value => String(value).toLowerCase().includes(phrase.toLowerCase()))
+      )
+    );
+
+    workbook.Sheets[name] = XLSX.utils.aoa_to_sheet(kept);
+  }
+
+  return workbook;
 }
 
 function selectFile(index) {
   activeIndex = index;
+
   [...fileList.querySelectorAll('button')].forEach(button => {
     button.classList.toggle('active', Number(button.dataset.index) === index);
   });
+
   resultBlob = null;
   downloadButton.disabled = true;
   resultBox.textContent = 'No result yet.';
   note.textContent = 'Your result will appear here.';
   message.textContent = files[index].error || `${files[index].name} is ready.`;
-  applyButton.disabled = !!files[index].error || !instructionInput.value.trim();
+  applyButton.disabled = !!files[index].error || !instruction.value.trim();
 }
 
 fileInput.addEventListener('change', async () => {
@@ -231,7 +280,6 @@ fileInput.addEventListener('change', async () => {
   fileList.innerHTML = '';
   applyButton.disabled = true;
   downloadButton.disabled = true;
-  resultBox.textContent = 'No result yet.';
 
   const chosen = [...fileInput.files];
   if (!chosen.length) return;
@@ -239,9 +287,14 @@ fileInput.addEventListener('change', async () => {
   message.textContent = `Reading ${chosen.length} file(s)…`;
 
   files = await Promise.all(chosen.map(async file => {
-    try { return await readFile(file); }
-    catch (error) {
-      return { name: file.name, extension: ext(file.name), error: error.message };
+    try {
+      return await readFile(file);
+    } catch (error) {
+      return {
+        name: file.name,
+        ext: extension(file.name),
+        error: error.message
+      };
     }
   }));
 
@@ -256,181 +309,90 @@ fileInput.addEventListener('change', async () => {
 
   const unreadable = files.filter(file => file.error).length;
   message.textContent = unreadable
-    ? `${chosen.length} file(s) selected. ${unreadable} could not be read.`
+    ? `${chosen.length} file(s) selected; ${unreadable} could not be read.`
     : `All ${chosen.length} file(s) are ready.`;
 
   selectFile(0);
   fileInput.value = '';
 });
 
-instructionInput.addEventListener('input', () => {
+instruction.addEventListener('input', () => {
   const file = files[activeIndex];
-  applyButton.disabled = !file || !!file.error || !instructionInput.value.trim();
+  applyButton.disabled = !file || !!file.error || !instruction.value.trim();
 });
 
 applyButton.addEventListener('click', async () => {
   const file = files[activeIndex];
-  const instruction = instructionInput.value.trim();
-  if (!file || !instruction) return;
+  if (!file) return;
 
   applyButton.disabled = true;
   downloadButton.disabled = true;
   resultBlob = null;
-  message.textContent = 'Working on your instruction…';
+  message.textContent = 'Preparing your result…';
 
   try {
+    if (file.error) throw new Error(file.error);
+
     if (file.kind === 'spreadsheet') {
       const XLSX = await getXLSX();
-      const workbook = XLSX.read(file.bytes, { type: 'array', cellFormula: true });
-      const phrase = getFilterPhrase(instruction);
-      const shouldFilter = /\b(only|filter|show|keep|bring out)\b/i.test(instruction) && phrase;
-      const reorder = instruction.match(/(?:reorder|arrange|put)\s+columns?\s*:?\s*(.+)/i);
-      const sort = instruction.match(/(?:sort|order)\s+rows?\s+by\s+["“]?([^,"”]+?)["”]?(?:\s+(ascending|descending|a to z|z to a))?(?:[.!?]|$)/i);
-      const formulaNotes = [];
-      let added = 0;
+      let workbook = XLSX.read(file.bytes, { type: 'array', cellFormula: true });
+      let previewRows;
 
-      for (const sheetName of workbook.SheetNames) {
-        const sheet = workbook.Sheets[sheetName];
-        if (!sheet['!ref']) continue;
-
-        const rows = XLSX.utils.sheet_to_json(sheet, {
-          header: 1, defval: '', raw: true, blankrows: true
-        });
-        const headerIndex = findHeaderRow(rows);
-        if (headerIndex < 0) continue;
-
-        let headers = rows[headerIndex].map(value => String(value ?? '').trim());
-        let data = rows.slice(headerIndex + 1);
-
-        if (shouldFilter) {
-          const needle = phrase.toLowerCase();
-          data = data.filter(row =>
-            row.some(value => String(value).toLowerCase().includes(needle))
-          );
-        }
-
-        if (reorder) {
-          const wanted = reorder[1].split(/,|\s+then\s+/i)
-            .map(value => value.replace(/["'“”]/g, '').trim()).filter(Boolean);
-          const requested = wanted.map(name =>
-            headers.find(header => header.toLowerCase() === name.toLowerCase())
-          ).filter(Boolean);
-
-          if (requested.length) {
-            const ordered = [...requested, ...headers.filter(header => !requested.includes(header))];
-            const indexes = ordered.map(header => headers.indexOf(header));
-            data = data.map(row => indexes.map(index => row[index] ?? ''));
-            headers = ordered;
-          }
-        }
-
-        if (sort) {
-          const sortIndex = headers.findIndex(
-            header => header.toLowerCase() === sort[1].trim().toLowerCase()
-          );
-          if (sortIndex >= 0) {
-            const descending = /descending|z to a/i.test(sort[2] || '');
-            data.sort((a, b) => {
-              const order = String(a[sortIndex] ?? '').localeCompare(
-                String(b[sortIndex] ?? ''), undefined,
-                { numeric: true, sensitivity: 'base' }
-              );
-              return descending ? -order : order;
-            });
-          }
-        }
-
-        const automatic = autoColumns(instruction, headers, XLSX, headerIndex + 2);
-
-        for (const column of automatic) {
-          const existing = headers.findIndex(
-            header => header.toLowerCase() === column.name.toLowerCase()
-          );
-          if (existing < 0) {
-            headers.push(column.name);
-            added++;
-          }
-          formulaNotes.push(`${column.name}: formula created automatically from the matching source column.`);
-        }
-
-        const outputRows = [...rows.slice(0, headerIndex), headers];
-
-        data.forEach((row, rowIndex) => {
-          const rowNumber = headerIndex + rowIndex + 2;
-          const output = [...row];
-
-          automatic.forEach(column => {
-            let columnIndex = headers.findIndex(
-              header => header.toLowerCase() === column.name.toLowerCase()
-            );
-            while (output.length < headers.length) output.push('');
-            output[columnIndex] = { formula: column.makeFormula(rowNumber) };
-          });
-
-          outputRows.push(output);
-        });
-
-        const newSheet = XLSX.utils.aoa_to_sheet(
-          outputRows.map(row => row.map(value =>
-            value && typeof value === 'object' && value.formula
-              ? { f: value.formula }
-              : value
-          ))
+      if (isGuestListInstruction(instruction.value)) {
+        const parsed = parseGroupedGuestList(workbook, XLSX);
+        workbook = parsed.workbook;
+        previewRows = parsed.rows;
+        note.textContent =
+          `Created ${parsed.rows.length - 1} guest rows in the original order. ` +
+          'Each phone number and table heading is matched to its guest.';
+      } else {
+        workbook = filterWorkbook(workbook, instruction.value, XLSX);
+        previewRows = workbook.SheetNames.flatMap(name =>
+          XLSX.utils.sheet_to_json(workbook.Sheets[name], {
+            header: 1, defval: '', raw: true
+          })
         );
-
-        if (sheet['!cols']) newSheet['!cols'] = sheet['!cols'];
-        workbook.Sheets[sheetName] = newSheet;
+        note.textContent = 'Spreadsheet prepared for download.';
       }
 
-      if (/phone|mobile|table|new columns/i.test(instruction) && added === 0 && !formulaNotes.length) {
-        throw new Error('I could not match the requested phone or table information to columns in this workbook. Check that the workbook has phone and table headings.');
-      }
-
-      workbook.Workbook ||= {};
-      workbook.Workbook.CalcPr = { calcMode: 'auto', fullCalcOnLoad: true, forceFullCalc: true };
-
-      const preview = workbook.SheetNames.map(name =>
-        `Sheet: ${name}\n${XLSX.utils.sheet_to_csv(workbook.Sheets[name])}`
-      ).join('\n\n');
-
-      const changes = [];
-      if (shouldFilter) changes.push(`kept rows containing “${phrase}”`);
-      if (reorder) changes.push('reordered columns');
-      if (sort) changes.push(`sorted rows by ${sort[1].trim()}`);
-      if (added) changes.push(`created ${added} new column(s) and generated their formulas`);
-      if (!changes.length) changes.push('prepared the spreadsheet');
-
-      const bytes = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
-      resultBlob = new Blob([bytes], {
+      const data = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+      resultBlob = new Blob([data], {
         type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
       });
-      resultName = `${file.name.replace(/\.[^.]+$/, '')}-result.xlsx`;
-      resultBox.textContent =
-        (formulaNotes.length ? `Automatically generated columns:\n${formulaNotes.join('\n')}\n\n` : '') +
-        preview;
-      note.textContent = `Completed: ${changes.join(', ')}.`;
+      downloadName = `${file.name.replace(/\.[^.]+$/, '')}-result.xlsx`;
+      resultBox.textContent = previewRows
+        .slice(0, 31)
+        .map(row => row.join('\t'))
+        .join('\n') + (previewRows.length > 31 ? '\n…' : '');
     } else {
-      const phrase = getFilterPhrase(instruction);
-      const filter = phrase && /\b(only|filter|show|keep|bring out)\b/i.test(instruction);
+      const match = instruction.value.match(
+        /(?:containing|with|named|at|for)\s+["“]?([^"”.,;]+)["”]?/i
+      );
+      const phrase = match?.[1]?.trim();
+      const shouldFilter =
+        phrase && /\b(only|filter|show|keep|bring out)\b/i.test(instruction.value);
       const lines = file.text.split(/\r?\n/);
-      const output = filter
+      const output = shouldFilter
         ? lines.filter(line => line.toLowerCase().includes(phrase.toLowerCase()))
         : lines;
 
       resultBox.textContent = output.join('\n') || 'No matching text found.';
-      note.textContent = filter
-        ? `Showing ${output.length} line(s) containing “${phrase}”.`
-        : 'File text is ready to review.';
-      resultBlob = new Blob([output.join('\n')], { type: 'text/plain;charset=utf-8' });
-      resultName = `${file.name.replace(/\.[^.]+$/, '')}-result.txt`;
+      note.textContent = shouldFilter
+        ? `Showing ${output.length} lines containing “${phrase}”.`
+        : 'File text is ready.';
+
+      resultBlob = new Blob([output.join('\n')], {
+        type: 'text/plain;charset=utf-8'
+      });
+      downloadName = `${file.name.replace(/\.[^.]+$/, '')}-result.txt`;
     }
 
     downloadButton.disabled = false;
-    message.textContent = 'Done. Review the result and download it.';
+    message.textContent = 'Done. Review the result, then download it.';
   } catch (error) {
     message.textContent = error.message || 'Could not complete that instruction.';
     note.textContent = 'The result could not be created.';
-    resultBox.textContent = 'Review the message above.';
+    resultBox.textContent = '';
   } finally {
     applyButton.disabled = false;
   }
@@ -438,10 +400,11 @@ applyButton.addEventListener('click', async () => {
 
 downloadButton.addEventListener('click', () => {
   if (!resultBlob) return;
+
   const link = document.createElement('a');
   const url = URL.createObjectURL(resultBlob);
   link.href = url;
-  link.download = resultName;
+  link.download = downloadName;
   link.click();
   URL.revokeObjectURL(url);
 });
